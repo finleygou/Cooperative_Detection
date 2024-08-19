@@ -98,17 +98,115 @@ def compute_area(x, *args):
 
     return probability
 
+
+'''
+for multi-target detection optimization scenarios
+'''
+def detect_optimization_multi(targets, attackers):
+    '''
+    多目标检测优化
+    '''
+    tar_poly = []
+    for tar in targets:
+        tar_poly.append(tar.polygon_area)
+    attackers_ = copy.deepcopy(attackers)
+    att_pos = []
+    att_phi = []
+    att_direction = []  # 待优化变量，x0
+
+    for att in attackers_:
+        att_pos.append(att.state.p_pos)
+        att_phi.append(att.state.phi)
+        att_direction.append(att.detect_phi)
+        att.detect_phi = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)  # initial direction, 每次优化都重新初始化
+
+    bound = [(-attackers_[0].detect_range, attackers_[0].detect_range)] * len(attackers_)
+    res = scipy.optimize.minimize(compute_area_multi, att_direction, args=(tar_poly, attackers_), 
+                            method='Nelder-Mead', bounds=bound)
+    x = res.x
+
+    # 检验是否有poly与目标poly相交为空集，若有则更新该x朝向target
+    for i, att in enumerate(attackers_):
+        att.detect_phi = x[i]
+        att.detect_area = att.get_detect_area()
+        for tar_poly in tar_poly:
+            intersection_ = tar_poly.intersection(att.detect_area)
+            if intersection_.is_empty:
+                x[i] = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)
+
+    ##################### draw #####################
+    tar_poly_pts = []
+    for tar_poly in tar_poly:
+        tar_poly_pts.append(list(tar_poly.exterior.coords[:-1]))
+    all_agents = att_pos
+    for tar in targets:
+        all_agents.append(tar.state.p_pos)
+    all_agents = np.array(all_agents)
+    # draw(att_poly_origin, tar_poly_pts, all_agents, att_phi)
+
+    att_poly_new = []
+    for i, att in enumerate(attackers_):
+        att.detect_phi = x[i]
+        att.detect_area = att.get_detect_area()
+        att_poly_new.append(list(att.get_detect_area().exterior.coords[:-1]))
+    # draw(att_poly_new, tar_poly_pts, all_agents, att_phi)
+
+    del attackers_
+
+    return x
+
+def compute_area_multi(x, *args):
+    '''
+    args = (tar_poly, attackers_)
+    '''
+    tar_poly = args[0]
+    attackers = args[1]
+    att_poly = []
+
+    for i, att in enumerate(attackers):
+        att.detect_phi = x[i]
+        att_poly.append(att.get_detect_area())
+    
+    probability = 0  # 均匀分布，概率为面积
+    # 容斥原理计算面积，偶加奇减的原则
+    # 计算2个图形间的面积
+    for i in range(len(attackers)):
+        for j in range(len(tar_poly)):
+            probability += compute_2area(tar_poly[j], att_poly[i]) 
+    # 计算3个图形间的面积
+    for i in range(len(attackers)):
+        for j in range(i+1, len(attackers)):
+            for k in range(len(tar_poly)):
+                probability -= compute_3area(tar_poly[k], att_poly[i], att_poly[j])
+    # 计算4个图形间的面积
+    for i in range(len(attackers)):
+        for j in range(i+1, len(attackers)):
+            for k in range(j+1, len(attackers)):
+                for l in range(len(tar_poly)):
+                    probability += compute_4area(tar_poly[l], att_poly[i], att_poly[j], att_poly[k])
+    # 计算5个图形间的面积
+    for i in range(len(attackers)):
+        for j in range(i+1, len(attackers)):
+            for k in range(j+1, len(attackers)):
+                for l in range(k+1, len(attackers)):
+                    for m in range(len(tar_poly)):
+                        probability -= compute_5area(tar_poly[m], att_poly[i], att_poly[j], att_poly[k], att_poly[l])
+
+    return probability
+
+
 def compute_2area(tar_poly, att_poly1):
     intersection_ = tar_poly.intersection(att_poly1)
     if intersection_.is_empty:
         return 0
     else:
+        '''
         intersection_pts = list(intersection_.exterior.coords[:-1])
         pts = np.array(intersection_pts)
         tri_cent = []
         for j in range(len(pts) - 2):
             pt1, pt2, pt3 = pts[0], pts[j + 1], pts[j + 2]
-            area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)
+            area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)  # 负数
             tri_cent.append([1 / 3 * (pt1[0] + pt2[0] + pt3[0]), 1 / 3 * (pt1[1] + pt2[1] + pt3[1]), area])
         Area, sumx, sumy = 0, 0, 0
         for j in range(len(tri_cent)):
@@ -117,6 +215,11 @@ def compute_2area(tar_poly, att_poly1):
             Area = Area + tri_cent[j][2]
         # Cx = sumx / Area # 计算质心
         # Cy = sumy / Area
+        '''
+        Area = - intersection_.area  # 因为最后的函数是minimize，所以要取负数
+        # print('Area is:', Area)
+        # print('polygon area is:', intersection_.area)
+
         return Area
 
 def compute_3area(tar_poly, att_poly1, att_poly2):
@@ -129,13 +232,14 @@ def compute_3area(tar_poly, att_poly1, att_poly2):
         if intersection_2.is_empty:
             return 0
         else:
-            intersection_pts = list(intersection_2.exterior.coords[:-1])
-            pts = np.array(intersection_pts)
-            Area = 0
-            for j in range(len(pts) - 2):
-                pt1, pt2, pt3 = pts[0], pts[j + 1], pts[j + 2]
-                area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)
-                Area = Area + area
+            # intersection_pts = list(intersection_2.exterior.coords[:-1])
+            # pts = np.array(intersection_pts)
+            # Area = 0
+            # for j in range(len(pts) - 2):
+            #     pt1, pt2, pt3 = pts[0], pts[j + 1], pts[j + 2]
+            #     area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)
+            #     Area = Area + area
+            Area = - intersection_2.area
             return Area
     
 def compute_4area(tar_poly, att_poly1, att_poly2, att_poly3):
@@ -153,13 +257,7 @@ def compute_4area(tar_poly, att_poly1, att_poly2, att_poly3):
             if intersection_3.is_empty:
                 return 0
             else:
-                intersection_pts = list(intersection_3.exterior.coords[:-1])
-                pts = np.array(intersection_pts)
-                Area = 0
-                for j in range(len(pts) - 2):
-                    pt1, pt2, pt3 = pts[0], pts[j + 1], pts[j + 2]
-                    area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)
-                    Area = Area + area
+                Area = - intersection_3.area
                 return Area
 
 def compute_5area(tar_poly, att_poly1, att_poly2, att_poly3, att_poly4):
@@ -182,13 +280,7 @@ def compute_5area(tar_poly, att_poly1, att_poly2, att_poly3, att_poly4):
                 if intersection_4.is_empty:
                     return 0
                 else:
-                    intersection_pts = list(intersection_4.exterior.coords[:-1])
-                    pts = np.array(intersection_pts)
-                    Area = 0
-                    for j in range(len(pts) - 2):
-                        pt1, pt2, pt3 = pts[0], pts[j + 1], pts[j + 2]
-                        area = 1 / 2 * np.cross(pt2 - pt1, pt3 - pt1)
-                        Area = Area + area
+                    Area = - intersection_4.area
                     return Area
                 
 

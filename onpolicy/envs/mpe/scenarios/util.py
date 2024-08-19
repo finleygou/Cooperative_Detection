@@ -1,6 +1,10 @@
 import numpy as np
 from scipy.optimize import linprog
+import scipy.optimize
 import copy
+from onpolicy.envs.mpe.intercept_probability import compute_area
+from matplotlib.collections import PolyCollection
+from shapely.geometry import Polygon
   
 # # other util functions
 def Get_antiClockAngle(v1, v2):  # 向量v1逆时针转到v2所需角度。范围：0-2pi
@@ -59,42 +63,6 @@ def GetAcuteAngle(v1, v2):  # 计算较小夹角(0-pi)
         elif cos_ < -1.0: 
             cos_ = -1.0
     return np.arccos(cos_)
-
-'''
-返回左右邻居下标(论文中邻居的定义方式)和夹角
-    agent: 当前adversary agent
-    adversary: 所有adversary agents数组
-    target: good agent
-'''
-def find_neighbors(agent, adversary, target):
-    angle_list = []
-    for adv in adversary:
-        if adv == agent:
-            angle_list.append(-1.0)
-            continue
-        agent_vec = agent.state.p_pos-target.state.p_pos
-        neighbor_vec = adv.state.p_pos-target.state.p_pos
-        angle_ = Get_antiClockAngle(agent_vec, neighbor_vec)
-        if np.isnan(angle_):
-            # print("angle_list_error. agent_vec:{}, nb_vec:{}".format(agent_vec, neighbor_vec))
-            if adv.i==0:
-                print("tp{:.3f} tv:{:.3f}".format(target.state.p_pos, target.state.p_vel))
-                print("0p{:.1f} 0v:{:.1f}".format(adversary[0].state.p_pos, adversary[0].state.p_vel))
-                print("1p{:.3f} 1v:{:.3f}".format(adversary[1].state.p_pos, adversary[1].state.p_vel))
-                print("2p{:.3f} 2v:{:.3f}".format(adversary[2].state.p_pos, adversary[2].state.p_vel))
-                print("3p{:.3f} 3v:{:.3f}".format(adversary[3].state.p_pos, adversary[3].state.p_vel))
-                print("4p{:.3f} 4v:{:.3f}".format(adversary[4].state.p_pos, adversary[4].state.p_vel))
-            angle_list.append(0)
-        else:
-            angle_list.append(angle_)
-
-    min_angle = np.sort(angle_list)[1]  # 第二小角，把自己除外
-    max_angle = max(angle_list)
-    min_index = angle_list.index(min_angle)
-    max_index = angle_list.index(max_angle)
-    max_angle = np.pi*2 - max_angle
-
-    return [max_index, min_index], max_angle, min_angle
 
 def rad2deg(rad):
     return rad/np.pi*180
@@ -202,7 +170,7 @@ def get_init_cost(attacker, defender, target):
 
 def get_energy_cost(attacker, defender, target):
     '''
-    cost based on energy
+    cost based on energy, the smaller the better
     '''
     attacker_ = copy.deepcopy(attacker)
     defender_ = copy.deepcopy(defender)
@@ -249,5 +217,37 @@ def get_dist_cost(attacker, defender, target):
     v_d = defender.state.p_vel
     theta_da_los = GetAcuteAngle(x_da, v_d)
     cost = LOS_coeff * theta_da_los + dist_coeff * np.linalg.norm(x_da)
+    
+    return cost
+
+def get_coverage_cost_AT(attacker, target):
+    '''
+    cost based on distance and coverage area, for one target ad one attacker
+    '''
+    attacker_ = copy.deepcopy(attacker)
+    target_ = copy.deepcopy(target)
+    attacker_.detect_phi = attacker_.get_init_detect_direction(target_.state.p_pos-attacker_.state.p_pos)
+
+    # compute the coverage area of the target and attacker, similar to the intercept_probability function
+    tar_poly = target_.polygon_area
+    bound = [(-attacker_.detect_range, attacker_.detect_range)]
+    res = scipy.optimize.minimize(compute_area, attacker_.detect_phi, args=(tar_poly, [attacker_]), 
+                            method='Nelder-Mead', bounds=bound)
+
+    attacker_.detect_phi = res.x
+    attacker_.detect_area = attacker_.get_detect_area()
+    intersection_ = tar_poly.intersection(attacker_.detect_area)
+    if intersection_.is_empty:
+        attacker_.detect_phi = attacker_.get_init_detect_direction(target.state.p_pos-attacker_.state.p_pos)
+        coverage_cost = 0
+    else:
+        coverage_cost = intersection_.area/tar_poly.area 
+
+    dist_coeff = 0.01 # tunable
+    LOS_coeff = 0.5
+    x_ta = attacker.state.p_pos - target.state.p_pos
+    v_t = target.state.p_vel
+    theta_da_los = GetAcuteAngle(x_ta, v_t)
+    cost = LOS_coeff * theta_da_los + dist_coeff * np.linalg.norm(x_ta)
     
     return cost
