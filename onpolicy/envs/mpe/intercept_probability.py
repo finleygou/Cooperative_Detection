@@ -105,6 +105,15 @@ def compute_area(x, *args):
                     for l in range(k+1, len(attackers)):
                         probability -= compute_5area(tar_poly, att_poly[i], att_poly[j], att_poly[k], att_poly[l])
 
+    if num_att >= 5:
+        # 计算6个图形间的面积
+        for i in range(len(attackers)):
+            for j in range(i+1, len(attackers)):
+                for k in range(j+1, len(attackers)):
+                    for l in range(k+1, len(attackers)):
+                        for m in range(l+1, len(attackers)):
+                            probability += compute_6area(tar_poly, att_poly[i], att_poly[j], att_poly[k], att_poly[l], att_poly[m])
+
     return probability
 
 
@@ -291,7 +300,34 @@ def compute_5area(tar_poly, att_poly1, att_poly2, att_poly3, att_poly4):
                 else:
                     Area = - intersection_4.area
                     return Area
-                
+
+def compute_6area(tar_poly, att_poly1, att_poly2, att_poly3, att_poly4, att_poly5):
+    intersection_1 = tar_poly.intersection(att_poly1)
+    if intersection_1.is_empty:
+        return 0
+    else:
+        intersection_1_hull = Polygon(intersection_1.exterior.coords[:-1])
+        intersection_2 = intersection_1_hull.intersection(att_poly2)
+        if intersection_2.is_empty:
+            return 0
+        else:
+            intersection_2_hull = Polygon(intersection_2.exterior.coords[:-1])
+            intersection_3 = intersection_2_hull.intersection(att_poly3)
+            if intersection_3.is_empty:
+                return 0
+            else:
+                intersection_3_hull = Polygon(intersection_3.exterior.coords[:-1])
+                intersection_4 = intersection_3_hull.intersection(att_poly4)
+                if intersection_4.is_empty:
+                    return 0
+                else:
+                    intersection_4_hull = Polygon(intersection_4.exterior.coords[:-1])
+                    intersection_5 = intersection_4_hull.intersection(att_poly5)
+                    if intersection_5.is_empty:
+                        return 0
+                    else:
+                        Area = - intersection_5.area
+                        return Area
 
 # @gif.frame
 def draw(poly_att, poly_tar, all_agents, att_phi):

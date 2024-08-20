@@ -284,12 +284,12 @@ def get_config():
     parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
 
     # entity number parameters
-    parser.add_argument("--num_target", type=int, default=1, help="the number of targets")
-    parser.add_argument("--num_attacker", type=int, default=4, help="the number of attackers")
+    parser.add_argument("--num_target", type=int, default=4, help="the number of targets")
+    parser.add_argument("--num_attacker", type=int, default=10, help="the number of attackers")
     parser.add_argument("--num_defender", type=int, default=0, help="the number of defenders")
     parser.add_argument("--num_agents", type=int, default=4, help="the number of defenders")
     parser.add_argument('--scenario_name', type=str,
-                        default='static_opt_cover', help="Which scenario to run on")
+                        default='multi10v4', help="Which scenario to run on")
     parser.add_argument("--num_landmarks", type=int, default=3)
 
     return parser

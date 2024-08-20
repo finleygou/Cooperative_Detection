@@ -7,6 +7,10 @@ from util import *
 from shapely.geometry import Point
 
 '''
+ 4 attackers and 1 target 的场景
+'''
+
+'''
 距离单位: km
 时间单位: s
 '''
