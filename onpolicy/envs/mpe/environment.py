@@ -119,18 +119,32 @@ class MultiAgentEnv(gym.Env):
             self._set_action(action_n[i], agent, self.action_space[i])
 
         # 检查目标的真实位置是否被探测到
-        is_detected = self.check_found_target(self.world)
-        if is_detected:
-            for agent in self.agents:
-                agent.detect_phi = agent.get_init_detect_direction(self.world.targets[0].state.p_pos-agent.state.p_pos)
-                agent.detect_area = agent.get_detect_area()
-        else:
-            # optimize the detecting direction and set direction for agents
-            opt_detect = detection_optimization(self.world.targets, self.world.attackers)
-            for i, agent in enumerate(self.agents):
-                agent.detect_phi = opt_detect[i]
-                agent.detect_area = agent.get_detect_area()
-        
+        for i, target in enumerate(self.world.targets):
+            is_detected = self.check_found_target(target, self.world)
+            attackers_i = [agent for agent in self.agents if agent.id in target.attackers]
+            if is_detected:
+                for agent in attackers_i:
+                    agent.detect_phi = agent.get_init_detect_direction(target.state.p_pos-agent.state.p_pos)
+                    agent.detect_area = agent.get_detect_area()
+            else:
+                # optimize the detecting direction and set direction for agents
+                opt_detect = detection_optimization(target, attackers_i)
+                for j, agent in enumerate(attackers_i):
+                    agent.detect_phi = opt_detect[j]
+                    agent.detect_area = agent.get_detect_area()
+
+        # is_detected = self.check_found_target(self.world)
+        # if is_detected:
+        #     for agent in self.agents:
+        #         agent.detect_phi = agent.get_init_detect_direction(self.world.targets[0].state.p_pos-agent.state.p_pos)
+        #         agent.detect_area = agent.get_detect_area()
+        # else:
+        #     # optimize the detecting direction and set direction for agents
+        #     opt_detect = detection_optimization(self.world.targets, self.world.attackers)
+        #     for i, agent in enumerate(self.agents):
+        #         agent.detect_phi = opt_detect[i]
+        #         agent.detect_area = agent.get_detect_area()
+
         # advance world state
         self.world.step()  # core.step(), after done, all stop. 不能传参
 
@@ -171,15 +185,14 @@ class MultiAgentEnv(gym.Env):
             # 所有target都被kill
             done_n = [True] * self.n
         
-        '''
+        
         # re-assign goals for TADs
         if self.update_belief is not None and not all(done_n):  # 若全部targets or attackers都被kill，则不需要更新
-            # self.current_step%10==0
-            if  not self.world.attacker_belief == attacker_belief or current_dead > self.world.cnt_dead:
+            if self.current_step % 10 == 0 and self.current_step < 60:
                 # if there is change in attacker belief or some agent is killed
                 self.update_belief(self.world)
                 # print("update belief")
-        '''
+        
 
         self.world.cnt_dead = current_dead
         self.world.attacker_belief = attacker_belief

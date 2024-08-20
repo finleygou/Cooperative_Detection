@@ -14,7 +14,7 @@ computing area 可以换成计算截获概率的公式
 '''
 
 def detection_optimization(target, attackers):
-    tar_poly = target[0].polygon_area
+    tar_poly = target.polygon_area
     attackers_ = copy.deepcopy(attackers)
     att_poly_origin = []  # pts
     att_pos = []
@@ -25,7 +25,7 @@ def detection_optimization(target, attackers):
         att_pos.append(att.state.p_pos)
         att_phi.append(att.state.phi)
         att_direction.append(att.detect_phi)
-        att.detect_phi = att.get_init_detect_direction(target[0].state.p_pos-att.state.p_pos)  # initial direction, 每次优化都重新初始化
+        att.detect_phi = att.get_init_detect_direction(target.state.p_pos-att.state.p_pos)  # initial direction, 每次优化都重新初始化
         att_poly_origin.append(list(att.get_detect_area().exterior.coords[:-1]))  # points to be visualized
     
     bound = [(-attackers_[0].detect_range, attackers_[0].detect_range)] * len(attackers_)
@@ -42,13 +42,13 @@ def detection_optimization(target, attackers):
         att.detect_area = att.get_detect_area()
         intersection_ = tar_poly.intersection(att.detect_area)
         if intersection_.is_empty:
-            x[i] = att.get_init_detect_direction(target[0].state.p_pos-att.state.p_pos)
+            x[i] = att.get_init_detect_direction(target.state.p_pos-att.state.p_pos)
 
     ##################### draw #####################
     tar_poly_pts = [list(tar_poly.exterior.coords[:-1])]
     # print('the target polygon is:', tar_poly_pts)
     all_agents = att_pos
-    all_agents.append(target[0].state.p_pos)
+    all_agents.append(target.state.p_pos)
     all_agents = np.array(all_agents)
     # draw(att_poly_origin, tar_poly_pts, all_agents, att_phi)
 
@@ -70,6 +70,7 @@ def compute_area(x, *args):
     tar_poly = args[0]
     attackers = args[1]
     att_poly = []
+    num_att = len(attackers)
 
     for i, att in enumerate(attackers):
         att.detect_phi = x[i]
@@ -77,24 +78,32 @@ def compute_area(x, *args):
     
     probability = 0  # 均匀分布，概率为面积
     # 容斥原理计算面积，偶加奇减的原则
-    # 计算2个图形间的面积
-    for i in range(len(attackers)):
-        probability += compute_2area(tar_poly, att_poly[i]) 
-    # 计算3个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            probability -= compute_3area(tar_poly, att_poly[i], att_poly[j])
-    # 计算4个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            for k in range(j+1, len(attackers)):
-                probability += compute_4area(tar_poly, att_poly[i], att_poly[j], att_poly[k])
-    # 计算5个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            for k in range(j+1, len(attackers)):
-                for l in range(k+1, len(attackers)):
-                    probability -= compute_5area(tar_poly, att_poly[i], att_poly[j], att_poly[k], att_poly[l])
+
+    if num_att >= 1:
+        # 计算2个图形间的面积
+        for i in range(len(attackers)):
+            probability += compute_2area(tar_poly, att_poly[i]) 
+    
+    if num_att >= 2:
+        # 计算3个图形间的面积
+        for i in range(len(attackers)):
+            for j in range(i+1, len(attackers)):
+                probability -= compute_3area(tar_poly, att_poly[i], att_poly[j])
+    
+    if num_att >= 3:
+        # 计算4个图形间的面积
+        for i in range(len(attackers)):
+            for j in range(i+1, len(attackers)):
+                for k in range(j+1, len(attackers)):
+                    probability += compute_4area(tar_poly, att_poly[i], att_poly[j], att_poly[k])
+    
+    if num_att >= 4:
+        # 计算5个图形间的面积
+        for i in range(len(attackers)):
+            for j in range(i+1, len(attackers)):
+                for k in range(j+1, len(attackers)):
+                    for l in range(k+1, len(attackers)):
+                        probability -= compute_5area(tar_poly, att_poly[i], att_poly[j], att_poly[k], att_poly[l])
 
     return probability
 
@@ -102,97 +111,97 @@ def compute_area(x, *args):
 '''
 for multi-target detection optimization scenarios
 '''
-def detect_optimization_multi(targets, attackers):
-    '''
-    多目标检测优化
-    '''
-    tar_poly = []
-    for tar in targets:
-        tar_poly.append(tar.polygon_area)
-    attackers_ = copy.deepcopy(attackers)
-    att_pos = []
-    att_phi = []
-    att_direction = []  # 待优化变量，x0
+# def detect_optimization_multi(targets, attackers):
+#     '''
+#     多目标检测优化
+#     '''
+#     tar_poly = []
+#     for tar in targets:
+#         tar_poly.append(tar.polygon_area)
+#     attackers_ = copy.deepcopy(attackers)
+#     att_pos = []
+#     att_phi = []
+#     att_direction = []  # 待优化变量，x0
 
-    for att in attackers_:
-        att_pos.append(att.state.p_pos)
-        att_phi.append(att.state.phi)
-        att_direction.append(att.detect_phi)
-        att.detect_phi = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)  # initial direction, 每次优化都重新初始化
+#     for att in attackers_:
+#         att_pos.append(att.state.p_pos)
+#         att_phi.append(att.state.phi)
+#         att_direction.append(att.detect_phi)
+#         att.detect_phi = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)  # initial direction, 每次优化都重新初始化
 
-    bound = [(-attackers_[0].detect_range, attackers_[0].detect_range)] * len(attackers_)
-    res = scipy.optimize.minimize(compute_area_multi, att_direction, args=(tar_poly, attackers_), 
-                            method='Nelder-Mead', bounds=bound)
-    x = res.x
+#     bound = [(-attackers_[0].detect_range, attackers_[0].detect_range)] * len(attackers_)
+#     res = scipy.optimize.minimize(compute_area_multi, att_direction, args=(tar_poly, attackers_), 
+#                             method='Nelder-Mead', bounds=bound)
+#     x = res.x
 
-    # 检验是否有poly与目标poly相交为空集，若有则更新该x朝向target
-    for i, att in enumerate(attackers_):
-        att.detect_phi = x[i]
-        att.detect_area = att.get_detect_area()
-        for tar_poly in tar_poly:
-            intersection_ = tar_poly.intersection(att.detect_area)
-            if intersection_.is_empty:
-                x[i] = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)
+#     # 检验是否有poly与目标poly相交为空集，若有则更新该x朝向target
+#     for i, att in enumerate(attackers_):
+#         att.detect_phi = x[i]
+#         att.detect_area = att.get_detect_area()
+#         for tar_poly in tar_poly:
+#             intersection_ = tar_poly.intersection(att.detect_area)
+#             if intersection_.is_empty:
+#                 x[i] = att.get_init_detect_direction(targets[0].state.p_pos-att.state.p_pos)
 
-    ##################### draw #####################
-    tar_poly_pts = []
-    for tar_poly in tar_poly:
-        tar_poly_pts.append(list(tar_poly.exterior.coords[:-1]))
-    all_agents = att_pos
-    for tar in targets:
-        all_agents.append(tar.state.p_pos)
-    all_agents = np.array(all_agents)
-    # draw(att_poly_origin, tar_poly_pts, all_agents, att_phi)
+#     ##################### draw #####################
+#     tar_poly_pts = []
+#     for tar_poly in tar_poly:
+#         tar_poly_pts.append(list(tar_poly.exterior.coords[:-1]))
+#     all_agents = att_pos
+#     for tar in targets:
+#         all_agents.append(tar.state.p_pos)
+#     all_agents = np.array(all_agents)
+#     # draw(att_poly_origin, tar_poly_pts, all_agents, att_phi)
 
-    att_poly_new = []
-    for i, att in enumerate(attackers_):
-        att.detect_phi = x[i]
-        att.detect_area = att.get_detect_area()
-        att_poly_new.append(list(att.get_detect_area().exterior.coords[:-1]))
-    # draw(att_poly_new, tar_poly_pts, all_agents, att_phi)
+#     att_poly_new = []
+#     for i, att in enumerate(attackers_):
+#         att.detect_phi = x[i]
+#         att.detect_area = att.get_detect_area()
+#         att_poly_new.append(list(att.get_detect_area().exterior.coords[:-1]))
+#     # draw(att_poly_new, tar_poly_pts, all_agents, att_phi)
 
-    del attackers_
+#     del attackers_
 
-    return x
+#     return x
 
-def compute_area_multi(x, *args):
-    '''
-    args = (tar_poly, attackers_)
-    '''
-    tar_poly = args[0]
-    attackers = args[1]
-    att_poly = []
+# def compute_area_multi(x, *args):
+#     '''
+#     args = (tar_poly, attackers_)
+#     '''
+#     tar_poly = args[0]
+#     attackers = args[1]
+#     att_poly = []
 
-    for i, att in enumerate(attackers):
-        att.detect_phi = x[i]
-        att_poly.append(att.get_detect_area())
+#     for i, att in enumerate(attackers):
+#         att.detect_phi = x[i]
+#         att_poly.append(att.get_detect_area())
     
-    probability = 0  # 均匀分布，概率为面积
-    # 容斥原理计算面积，偶加奇减的原则
-    # 计算2个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(len(tar_poly)):
-            probability += compute_2area(tar_poly[j], att_poly[i]) 
-    # 计算3个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            for k in range(len(tar_poly)):
-                probability -= compute_3area(tar_poly[k], att_poly[i], att_poly[j])
-    # 计算4个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            for k in range(j+1, len(attackers)):
-                for l in range(len(tar_poly)):
-                    probability += compute_4area(tar_poly[l], att_poly[i], att_poly[j], att_poly[k])
-    # 计算5个图形间的面积
-    for i in range(len(attackers)):
-        for j in range(i+1, len(attackers)):
-            for k in range(j+1, len(attackers)):
-                for l in range(k+1, len(attackers)):
-                    for m in range(len(tar_poly)):
-                        probability -= compute_5area(tar_poly[m], att_poly[i], att_poly[j], att_poly[k], att_poly[l])
+#     probability = 0  # 均匀分布，概率为面积
+#     # 容斥原理计算面积，偶加奇减的原则
+#     # 计算2个图形间的面积
+#     for i in range(len(attackers)):
+#         for j in range(len(tar_poly)):
+#             probability += compute_2area(tar_poly[j], att_poly[i]) 
+#     # 计算3个图形间的面积
+#     for i in range(len(attackers)):
+#         for j in range(i+1, len(attackers)):
+#             for k in range(len(tar_poly)):
+#                 probability -= compute_3area(tar_poly[k], att_poly[i], att_poly[j])
+#     # 计算4个图形间的面积
+#     for i in range(len(attackers)):
+#         for j in range(i+1, len(attackers)):
+#             for k in range(j+1, len(attackers)):
+#                 for l in range(len(tar_poly)):
+#                     probability += compute_4area(tar_poly[l], att_poly[i], att_poly[j], att_poly[k])
+#     # 计算5个图形间的面积
+#     for i in range(len(attackers)):
+#         for j in range(i+1, len(attackers)):
+#             for k in range(j+1, len(attackers)):
+#                 for l in range(k+1, len(attackers)):
+#                     for m in range(len(tar_poly)):
+#                         probability -= compute_5area(tar_poly[m], att_poly[i], att_poly[j], att_poly[k], att_poly[l])
 
-    return probability
+#     return probability
 
 
 def compute_2area(tar_poly, att_poly1):

@@ -231,23 +231,25 @@ def get_coverage_cost_AT(attacker, target):
     # compute the coverage area of the target and attacker, similar to the intercept_probability function
     tar_poly = target_.polygon_area
     bound = [(-attacker_.detect_range, attacker_.detect_range)]
-    res = scipy.optimize.minimize(compute_area, attacker_.detect_phi, args=(tar_poly, [attacker_]), 
+    res = scipy.optimize.minimize(compute_area, [attacker_.detect_phi], args=(tar_poly, [attacker_]), 
                             method='Nelder-Mead', bounds=bound)
 
-    attacker_.detect_phi = res.x
+    attacker_.detect_phi = res.x[0]
     attacker_.detect_area = attacker_.get_detect_area()
     intersection_ = tar_poly.intersection(attacker_.detect_area)
     if intersection_.is_empty:
         attacker_.detect_phi = attacker_.get_init_detect_direction(target.state.p_pos-attacker_.state.p_pos)
         coverage_cost = 0
     else:
-        coverage_cost = intersection_.area/tar_poly.area 
+        coverage_cost = - intersection_.area/tar_poly.area 
 
     dist_coeff = 0.01 # tunable
-    LOS_coeff = 0.5
-    x_ta = attacker.state.p_pos - target.state.p_pos
-    v_t = target.state.p_vel
-    theta_da_los = GetAcuteAngle(x_ta, v_t)
-    cost = LOS_coeff * theta_da_los + dist_coeff * np.linalg.norm(x_ta)
+    coverage_coeff = 0.5
+    x_ta = attacker_.state.p_pos - target_.state.p_pos
+
+    cost = coverage_coeff * coverage_cost + dist_coeff * np.linalg.norm(x_ta)
+
+    del attacker_
+    del target_
     
     return cost

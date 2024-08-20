@@ -111,7 +111,7 @@ class Scenario(BaseScenario):
             attacker.detect_phi = attacker.get_init_detect_direction(world.targets[0].state.p_pos-attacker.state.p_pos)
             attacker.detect_area = attacker.get_detect_area()
 
-        # self.update_belief(world)
+        self.update_belief(world)
 
     def benchmark_data(self, agent, world):
         if agent.adversary:
@@ -230,6 +230,9 @@ class Scenario(BaseScenario):
         return False
 
     def update_belief(self, world):
+        '''
+        update targets' belief according to the assignment result, which attackers are assigned to which targets
+        '''
         target_list = []
         defender_list = []
         attacker_list = []
@@ -253,62 +256,53 @@ class Scenario(BaseScenario):
                 attacker_list.append(attacker)
                 attacker_id_list.append(attacker.id)
         
-        if len(defender_list) > 0:
+        if len(target_list) > 0:
             # calculate the cost matrix
-            T = np.zeros((len(defender_list), len(attacker_list)))
-            if self.init_assign:
-                for i, defender in enumerate(defender_list):
-                    for j, attacker in enumerate(attacker_list):
-                        T[i, j] = get_init_cost(attacker, defender, world.targets[attacker.fake_target])
-                self.init_assign = False      
-            else:
-                for i, defender in enumerate(defender_list):
-                    for j, attacker in enumerate(attacker_list):
-                        T[i, j] = get_energy_cost(attacker, defender, world.targets[attacker.fake_target])
+            T = np.zeros((len(attacker_list), len(target_list)))
+            for i, attacker in enumerate(attacker_list):
+                for j, target in enumerate(target_list):
+                    T[i, j] = get_coverage_cost_AT(attacker, target)
             # print('T is:', T)
             # print('TAD list are:', target_id_list, defender_id_list, attacker_id_list)
-            assign_result = target_assign(T)  # |D|*|A|的矩阵
+            assign_result = target_assign(T)  # |A|*|T|的矩阵
             # print('assign_result is:', assign_result)
 
             '''
             如果assign报错，检查'TAD list，查看A的list是否为空。如果全部A被拦截，不需要update belief
             '''
             # update belief list of TDs according to assign_result
-            for i, defender in enumerate(defender_list):  # 遍历行
-                for j in range(len(attacker_list)):
+            for i, attacker in enumerate(attacker_list):  # 遍历行
+                for j in range(len(target_list)):
                     if assign_result[i, j] == 1:
-                        defender.attacker = attacker_list[j].id
-                        defender.target = attacker_list[j].fake_target
-                        attacker_list[j].defenders.append(defender.id)
-                        target = world.targets[attacker_list[j].fake_target]
-                        target.defenders.append(defender.id)
-                        target.attackers.append(attacker_list[j].id)
+                        attacker.fake_target = target_list[j].id
+                        attacker.true_target = target_list[j].id
+                        target = target_list[j]
+                        target.attackers.append(attacker.id)
                         target.cost.append(T[i, j])
             
             # 为target从list中选择AD
             for i, target in enumerate(target_list):
                 if len(target.cost)>0:
-                    target.defender = target.defenders[np.argmin(target.cost)]
+                    # target.defender = target.defenders[np.argmin(target.cost)]
                     target.attacker = target.attackers[np.argmin(target.cost)]
                 else:
-                    # 有的target已经不需要AD了，AD太少了
-                    target.defender = np.random.choice(defender_id_list)
+                    # 有的target已经不需要A了，A太少了
+                    # target.defender = np.random.choice(defender_id_list)
                     target.attacker = np.random.choice(attacker_id_list)
 
-            
-            # print('T believes are:', )
+    def check_found_target(self, target, world):
 
-    def check_found_target(self, world):
-        target = world.targets[0]
         target_true_pos = Point(target.state.p_pos_true)
         is_detected = False
-        for attacker in world.attackers:
+        for i in range(len(target.attackers)):
+            attacker = world.attackers[target.attackers[i]]
             if attacker.detect_area.contains(target_true_pos):
                 is_detected = True
         
         if is_detected:
             target.state.p_pos = target.state.p_pos_true
-            for attacker in world.attackers:
+            for i in range(len(target.attackers)):
+                attacker = world.attackers[target.attackers[i]]
                 attacker.is_locked = True
                 attacker.true_target = target.id
 
