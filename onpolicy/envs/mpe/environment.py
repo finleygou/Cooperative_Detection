@@ -188,7 +188,7 @@ class MultiAgentEnv(gym.Env):
         
         # re-assign goals for TADs
         if self.update_belief is not None and not all(done_n):  # 若全部targets or attackers都被kill，则不需要更新
-            if self.current_step % 10 == 0 and self.current_step < 60:
+            if self.current_step % 10 == 0 and self.current_step < 40:
                 # if there is change in attacker belief or some agent is killed
                 self.update_belief(self.world)
                 # print("update belief")

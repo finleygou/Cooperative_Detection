@@ -289,7 +289,7 @@ def get_config():
     parser.add_argument("--num_defender", type=int, default=0, help="the number of defenders")
     parser.add_argument("--num_agents", type=int, default=4, help="the number of defenders")
     parser.add_argument('--scenario_name', type=str,
-                        default='multi10v4', help="Which scenario to run on")
+                        default='multi_10v4', help="Which scenario to run on")
     parser.add_argument("--num_landmarks", type=int, default=3)
 
     return parser

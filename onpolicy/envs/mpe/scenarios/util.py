@@ -244,7 +244,7 @@ def get_coverage_cost_AT(attacker, target):
         coverage_cost = - intersection_.area/tar_poly.area 
 
     dist_coeff = 0.01 # tunable
-    coverage_coeff = 0.5
+    coverage_coeff = 0.1
     x_ta = attacker_.state.p_pos - target_.state.p_pos
 
     cost = coverage_coeff * coverage_cost + dist_coeff * np.linalg.norm(x_ta)

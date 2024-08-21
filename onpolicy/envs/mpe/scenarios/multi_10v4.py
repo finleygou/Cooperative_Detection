@@ -69,7 +69,7 @@ class Scenario(BaseScenario):
         # print('init assign_list is:', self.assign_list)
 
         # properties and initial states for agents
-        init_pos_target = np.array([[24.0, 3.0], [20, 14.0], [22, -7.0], [24, -14.5]])
+        init_pos_target = np.array([[24.0, 3.0], [20, 14.0], [22, -5.0], [21, -11.5]])
         init_pos_target = init_pos_target + np.random.randn(*init_pos_target.shape)*0.2
         for i, target in enumerate(world.targets):
             target.done = False
@@ -92,9 +92,9 @@ class Scenario(BaseScenario):
             target.polygon_area = target.get_area()
 
 
-        init_pos_attacker = np.array([[-1.2, 12.5], [2.0, 8.8], [5.0, 6.5], [0.3, 4.5], [-0.5, 1.5],
-                                      [1.8, -3.5], [3.5, -5.0], [0.0, -7.0], [-0.2, -9.5], [2.5, -13.5]])
-        init_pos_attacker = init_pos_attacker + np.random.randn(*init_pos_attacker.shape)*0.2
+        init_pos_attacker = np.array([[-1.2, 10.5], [2.0, 7.5], [3.0, 5.0], [0.3, 3.0], [-0.5, 0.4],
+                                      [1.0, -3.5], [3.5, -5.0], [0.0, -7.0], [-0.2, -9.5], [2.5, -13.5]])
+        init_pos_attacker = init_pos_attacker + np.random.randn(*init_pos_attacker.shape)*0.1
         for i, attacker in enumerate(world.attackers):
             attacker.done = False
             attacker.state.p_pos = init_pos_attacker[i]
