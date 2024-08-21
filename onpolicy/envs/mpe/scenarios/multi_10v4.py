@@ -260,12 +260,15 @@ class Scenario(BaseScenario):
         if len(target_list) > 0:
             # calculate the cost matrix
             T = np.zeros((len(attacker_list), len(target_list)))
-            for i, attacker in enumerate(attacker_list):
-                for j, target in enumerate(target_list):
-                    T[i, j] = get_coverage_cost_AT(attacker, target)
-            # print('T is:', T)
-            # print('TAD list are:', target_id_list, defender_id_list, attacker_id_list)
-            assign_result = target_assign(T)  # |A|*|T|的矩阵
+            if self.init_assign:
+                for i, attacker in enumerate(attacker_list):
+                    for j, target in enumerate(target_list):
+                        T[i, j] = get_coverage_cost_AT(attacker, target)
+                assign_result = target_assign(T)  # 线性规划，初次分配解
+                self.init_assign = False
+            else: 
+                # 非线性整数规划，最大化探测面积
+                assign_result = target_assign_NonlinearInteger(T, attacker_list, target_list)  # |A|*|T|的矩阵
             # print('assign_result is:', assign_result)
 
             '''
@@ -279,7 +282,7 @@ class Scenario(BaseScenario):
                         attacker.true_target = target_list[j].id
                         target = target_list[j]
                         target.attackers.append(attacker.id)
-                        target.cost.append(T[i, j])
+                        # target.cost.append(T[i, j])
             
             # 为target从list中选择AD
             for i, target in enumerate(target_list):

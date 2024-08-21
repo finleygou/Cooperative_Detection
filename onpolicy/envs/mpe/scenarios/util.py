@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import linprog
 import scipy.optimize
 import copy
-from onpolicy.envs.mpe.intercept_probability import compute_area
+from onpolicy.envs.mpe.intercept_probability import compute_area, detection_optimization
 from matplotlib.collections import PolyCollection
 from shapely.geometry import Polygon
   
@@ -82,6 +82,7 @@ def constrain_angle(theta):
         theta = theta + np.pi*2
     return theta
 
+
 def rand_assign_targets(num_target, num_attacker):
     '''
     return a list of target index for attackers
@@ -121,45 +122,149 @@ def target_assign(T):
     c = cost_matrix.flatten()
     # print(c)
 
-    # Number of weapons and targets
-    num_weapons = cost_matrix.shape[0]
+    # Number of attackers and targets
+    num_attackers = cost_matrix.shape[0]
     num_targets = cost_matrix.shape[1]
 
-    # Constraints to ensure each target gets at least one weapon
+    # Constraints to ensure each target gets at least one attacker
     A = np.eye(num_targets)
-    for i in range(num_weapons-1):
+    for i in range(num_attackers-1):
         A = np.hstack([A, np.eye(num_targets)])
     b = np.ones(num_targets)
 
-    # Constraints to ensure each weapon gets a target
-    A_eq = np.zeros((num_weapons, num_weapons * num_targets))
+    # Constraints to ensure each attacker gets a target
+    A_eq = np.zeros((num_attackers, num_attackers * num_targets))
 
     # Constraints for targets
-    for i in range(num_weapons):
-        for j in range(num_targets*num_weapons):
+    for i in range(num_attackers):
+        for j in range(num_targets*num_attackers):
             if j == i*num_targets:
                 A_eq[i, j:j+num_targets] = 1
                 break
 
     # Right-hand side of the constraints
-    b_eq = np.ones(num_weapons)
+    b_eq = np.ones(num_attackers)
 
     # Bounds for each variable (0 or 1)
-    x_bounds = [(0, 1) for _ in range(num_weapons * num_targets)]
+    x_bounds = [(0, 1) for _ in range(num_attackers * num_targets)]
 
     # Solve the integer linear programming problem
     result = linprog(c, -A, -b, A_eq, b_eq, bounds=x_bounds)
 
     
     # Extract the solution
-    solution = result.x.reshape(num_weapons, num_targets)
+    solution = result.x.reshape(num_attackers, num_targets)
 
     # Display the solution
-    weapon_assignment = np.where(solution > 0.5, 1, 0)
-    # print("Weapon Assignment Matrix:")
-    # print(weapon_assignment)
+    attacker_assignment = np.where(solution > 0.5, 1, 0)
+    # print("attacker Assignment Matrix:")
+    # print(attacker_assignment)
 
-    return weapon_assignment
+    return attacker_assignment
+
+def target_assign_NonlinearInteger(T, attackers, targets):
+    '''
+    此处输入T是分配矩阵(全0,1)，不是威胁度矩阵。目标函数需要根据分配解单独重新计算。
+    '''
+    attackers_ = copy.deepcopy(attackers)
+    targets_ = copy.deepcopy(targets)
+    num_attackers = len(attackers_)
+    num_targets = len(targets_)
+    # 初始化T矩阵作为初始分配解
+    for i, attacker in enumerate(attackers_):
+        for j, target in enumerate(targets_):
+            if attacker.true_target == target.id:
+                T[i][j] = 1
+    T = np.array(T)
+    x0 = T.flatten()
+
+    print('initial assignment:', T)
+
+    def constraint_ineq(x):
+        '''
+        f(x)>=0
+        '''
+        A = np.eye(num_targets)
+        for i in range(num_attackers-1):
+            A = np.hstack([A, np.eye(num_targets)])
+        b = np.ones(num_targets)
+
+        y = np.dot(A, x) - b
+
+        return np.array(y)
+
+    def constraint_eq(x):
+        '''
+        f(x)=0
+        '''
+        # Constraints to ensure each attacker gets a target
+        A_eq = np.zeros((num_attackers, num_attackers * num_targets))
+
+        # Constraints for targets
+        for i in range(num_attackers):
+            for j in range(num_targets*num_attackers):
+                if j == i*num_targets:
+                    A_eq[i, j:j+num_targets] = 1
+                    break
+
+        # Right-hand side of the constraints
+        b_eq = np.ones(num_attackers)
+
+        y = np.dot(A_eq, x) - b_eq
+
+        return np.array(y)
+
+    def objective(x, *args):
+        '''
+        根据当前分配解计算目标函数
+        '''
+        targets = args[0]
+        attackers = args[1]
+        m, n = len(attackers), len(targets)
+        x = np.round(x).astype(int)  # 对x进行取整操作
+
+        # 还原当前分配解
+        assign_matrix = x.reshape(m,n)
+        for i, target in enumerate(targets):
+            target.attackers = []
+        for i, attacker in enumerate(attackers):
+            for j, target in enumerate(targets):
+                if assign_matrix[i, j] == 1:
+                    attacker.true_target = target.id
+                    target.attackers.append(attacker.id)
+        # 计算当前分配解下的目标函数值
+        total_obj = 0
+        for i, target in enumerate(targets):
+            attackers_i = [att for att in attackers if att.true_target == target.id]
+            target_poly = target.polygon_area
+            opt_detect = detection_optimization(target, attackers_i)
+            area = compute_area(opt_detect, target_poly, attackers_i)
+            total_obj += area
+        
+        print("total_obj:", total_obj)
+        return total_obj
+
+    x_bounds = [(0, 1) for _ in range(num_attackers * num_targets)]
+
+    ineq_cons = {'type': 'ineq', 'fun' : constraint_ineq}
+    eq_cons = {'type': 'eq', 'fun' : constraint_eq}
+
+    res = scipy.optimize.minimize(objective, x0, args=(targets_, attackers_), method='trust-constr',  jac="2-point",
+                                   constraints=[ineq_cons, eq_cons], bounds=x_bounds)
+    # Extract the solution
+    solution = res.x.reshape(num_attackers, num_targets)
+    solution = np.round(solution).astype(int)  # 四舍五入取整
+
+    # Display the solution
+    attacker_assignment = np.where(solution > 0.5, 1, 0)
+
+    del attackers_
+    del targets_
+
+    print("attacker Assignment Matrix:\n", attacker_assignment)
+
+    return attacker_assignment
+
 
 def get_init_cost(attacker, defender, target):
     '''
