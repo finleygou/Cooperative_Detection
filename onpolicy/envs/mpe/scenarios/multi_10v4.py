@@ -268,7 +268,12 @@ class Scenario(BaseScenario):
                 self.init_assign = False
             else: 
                 # 非线性整数规划，最大化探测面积
-                assign_result = target_assign_NonlinearInteger(T, attacker_list, target_list)  # |A|*|T|的矩阵
+                # assign_result = target_assign_NonlinearInteger(T, attacker_list, target_list)  # |A|*|T|的矩阵
+            
+                for i, attacker in enumerate(attacker_list):
+                    for j, target in enumerate(target_list):
+                        T[i, j] = get_coverage_cost_AT(attacker, target)
+                assign_result = target_assign(T)  # 线性规划，初次分配解
             # print('assign_result is:', assign_result)
 
             '''

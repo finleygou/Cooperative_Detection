@@ -130,7 +130,7 @@ def target_assign(T):
     A = np.eye(num_targets)
     for i in range(num_attackers-1):
         A = np.hstack([A, np.eye(num_targets)])
-    b = np.ones(num_targets)
+    b = 2*np.ones(num_targets)
 
     # Constraints to ensure each attacker gets a target
     A_eq = np.zeros((num_attackers, num_attackers * num_targets))
