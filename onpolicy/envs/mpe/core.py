@@ -2,6 +2,7 @@ import numpy as np
 import seaborn as sns
 from .scenarios.util import *
 from shapely.geometry import Polygon
+from .receding_horizon_control import receding_horizon
 
 # physical/external base state of all entites
 class EntityState(object):
@@ -128,6 +129,7 @@ class Target(Agent):
         self.area_pts = None  # a list of points for polygon area
         self.area_mode = 1  # 1: square, 2: pentagon, 3: hexagon
         self.sigma_dist = 5  # km, standard deviation of distance error
+        self.area = 0  # area of the polygon
 
     def get_area(self):
         '''
@@ -141,22 +143,28 @@ class Target(Agent):
             pt4 = self.state.p_pos + self.sigma_dist * np.array([-1, -1])
             area_pts = [pt1, pt2, pt3, pt4]
             polygon_area = Polygon(area_pts)
+            self.area = (self.sigma_dist*2)**2
 
         elif self.area_mode == 2:
             area_pts = []
             for i in range(5):
                 area_pts.append(self.state.p_pos + self.sigma_dist * np.array([np.cos(i * 2 * np.pi / 5), np.sin(i * 2 * np.pi / 5)]))
             polygon_area = Polygon(area_pts)
+            self.area = 5/4 * self.sigma_dist**2 * np.sin(np.pi/5)
+
         elif self.area_mode == 3:
             area_pts = []
             for i in range(6):
                 area_pts.append(self.state.p_pos + self.sigma_dist * np.array([np.cos(i * 2 * np.pi / 6), np.sin(i * 2 * np.pi / 6)]))
             polygon_area = Polygon(area_pts)
+            self.area = 3/2 * self.sigma_dist**2 * np.sqrt(3)
+
         elif self.area_mode == 4:
             area_pts = []
             for i in range(15):
                 area_pts.append(self.state.p_pos + self.sigma_dist * np.array([np.cos(i * 2 * np.pi / 15), np.sin(i * 2 * np.pi / 15)]))
             polygon_area = Polygon(area_pts)
+            self.area = np.pi * self.sigma_dist**2
 
         return polygon_area
 
@@ -172,6 +180,7 @@ class Attacker(Agent):
         self.flag_dead = False  # being killed by defender
         # self.last_belief = None
         self.is_locked = False  # whether lock the true target
+        self.move_policy = 'png'  # 'rhc' or 'png'
 
         # detection related
         self.detect_dist = 20  # km, max detection distance
@@ -335,6 +344,17 @@ class World(object):
         for landmark in self.landmarks:
             landmark.color = np.array([0.25, 0.25, 0.25])
 
+    def set_rhc_action(self):
+        for i, target in enumerate(self.targets):
+            attackers_i = [agent for agent in self.attackers if agent.id in target.attackers]
+            if attackers_i[0].is_locked:
+                pass
+            else:
+                # optimize the detecting direction and set direction for agents
+                u = receding_horizon(target, attackers_i, self.dt)
+                for j, agent in enumerate(attackers_i):
+                    agent.action.u = u[j]  # 2 dimension
+
     # update state of the world
     def step(self):
 
@@ -355,6 +375,9 @@ class World(object):
                 action = agent.action_callback(self.targets[self.attackers[agent.attacker].fake_target], self.attackers[agent.attacker], agent)
                 agent.action.u = action
                 # print("agent {} action is {}".format(agent.id, action))
+
+        if self.attackers[0].move_policy == 'rhc':
+            self.set_rhc_action()  # 集中式，同时计算并赋值多个agent的动作
             
         
         # gather forces applied to entities
