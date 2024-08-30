@@ -61,7 +61,7 @@ class Scenario(BaseScenario):
             attacker.color = np.array([0.95, 0.15, 0.15])
             attacker.max_speed = 4*Mach
             attacker.max_accel = 15*G
-            attacker.move_policy = 'png'
+            attacker.move_policy = 'rhc'
             attacker.action.u = np.zeros(2)  # 初始化action
             attacker.action_callback = attacker_policy
 
