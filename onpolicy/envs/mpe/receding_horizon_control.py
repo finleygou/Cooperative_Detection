@@ -78,10 +78,10 @@ def receding_horizon(target, attackers, dt, u_res):
     h = 5  # 预测步长
     N = len(attackers)
     u0 = np.zeros(h*N)  # 控制量, 拉成一行便于优化. u0 = [u1(1), u2(1), ..., uh]
-    print("before u0: ", u0)
+    # print("before u0: ", u0)
     if u_res is not None:
         u0[0:(h-1)*N] = u_res[N:]  # 用上一次的结果作为初始值
-    print("after u0: ", u0)
+    # print("after u0: ", u0)
     
 
     target_ = copy.deepcopy(target)
