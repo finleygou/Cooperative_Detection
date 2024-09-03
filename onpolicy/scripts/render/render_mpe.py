@@ -7,7 +7,7 @@ import setproctitle
 import numpy as np
 from pathlib import Path
 # print(os.getcwd())
-sys.path.insert(0, "D:\Courses\scientific_research\activity\coverage\code\Cooperative_Detection")
+sys.path.insert(0, "D:\Scientific_Research\activity\24_Coverage")
 
 import torch
 

@@ -40,7 +40,6 @@ def cost_function(u, *args):
     u = u.reshape((-1, len(attackers_)))
     h = u.shape[0]
 
-    
     cost = 0
     for i in range(h):
         # forward dynamics
