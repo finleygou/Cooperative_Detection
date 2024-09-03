@@ -79,7 +79,7 @@ def receding_horizon(target, attackers, dt, u_res):
     N = len(attackers)
     u0 = np.zeros(h*N)  # 控制量, 拉成一行便于优化. u0 = [u1(1), u2(1), ..., uh]
     if u_res is not None:
-        u0 = u_res
+        u0[0:(h-1)*N] = u_res[N:]  # 用上一次的结果作为初始值
 
     target_ = copy.deepcopy(target)
     attackers_ = copy.deepcopy(attackers)
