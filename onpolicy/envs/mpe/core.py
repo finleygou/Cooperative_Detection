@@ -276,6 +276,8 @@ class World(object):
         self.cnt_dead = 0
         self.attacker_belief = []
 
+        self.u_res = None # 用于存储RHC的结果以作为下一时刻的初值
+
     # return all entities in the world
     @property
     def entities(self):
@@ -351,7 +353,7 @@ class World(object):
                 pass
             else:
                 # optimize the detecting direction and set direction for agents
-                u = receding_horizon(target, attackers_i, self.dt)
+                u, self.u_res = receding_horizon(target, attackers_i, self.dt, self.u_res)
                 for j, agent in enumerate(attackers_i):
                     agent.action.u = u[j]  # 2 dimension
 
