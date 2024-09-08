@@ -33,6 +33,9 @@ class MultiAgentEnv(gym.Env):
         self.Cp = 0.6  # 1.0 # 0.3
         self.JS_thre = 0
 
+        # data save parameters
+        self.intersc_area = 0
+
         # terminate
         self.is_ternimate = False
 
@@ -132,6 +135,8 @@ class MultiAgentEnv(gym.Env):
                 for j, agent in enumerate(attackers_i):
                     agent.detect_phi = opt_detect[j]
                     agent.detect_area = agent.get_detect_area()
+        
+        self.intersc_area = compute_area(opt_detect, self.world.targets[0].polygon_area, self.world.attackers)
 
         # is_detected = self.check_found_target(self.world)
         # if is_detected:
@@ -396,8 +401,15 @@ class MultiAgentEnv(gym.Env):
             # for j in range(len(self.world.agents)):
             #     data_ = data_ + (j, self.world.agents[j].state.p_pos[0], self.world.agents[j].state.p_pos[1])
             # data_ = data_ + (self.q_md, self.q_md_dot)
+            
+            # for j in range(len(self.world.agents)):
+            #     print('agent move:',self.world.agents[j].action.u)
+            #     u_sqr = np.sum(self.world.agents[j].action.u**2)
+            #     data_ = data_ + (u_sqr)
+            # data_ = data_ + (self.intersc_area,)
+            
             # INFO.append(data_)
-            # #csv
+            #csv
             
 
             # update geometry positions
