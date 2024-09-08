@@ -89,6 +89,7 @@ class Scenario(BaseScenario):
 
             target.sigma_dist = 4  # 区域半径
             rand_pos = np.random.uniform(0, 1, 2)
+            # rand_pos = [0.9, 0.0]
             r_, theta_ = target.sigma_dist*rand_pos[0], np.pi*2*rand_pos[1]
             target.state.p_pos_true = target.state.p_pos + np.array([r_*np.cos(theta_), r_*np.sin(theta_)])
             # target.state.p_pos_true = target.state.p_pos + np.array([-0.4, -0.8])*target.sigma_dist

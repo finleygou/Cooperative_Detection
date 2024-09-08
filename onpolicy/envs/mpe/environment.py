@@ -459,12 +459,12 @@ class MultiAgentEnv(gym.Env):
                     self.line[m+k].set_color(*attacker.color, alpha=0.5)
 
             # 加速度大小
-            m = len(self.line)
-            for k, attacker in enumerate(self.world.attackers):
-                if not attacker.done:
-                    # print('action is:',attacker.action.u)
-                    self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, attacker.state.p_pos+attacker.action.u*5000.0)
-                    self.line[m+k].set_color(*attacker.color, alpha=0.5)
+            # m = len(self.line)
+            # for k, attacker in enumerate(self.world.attackers):
+            #     if not attacker.done:
+            #         # print('action is:',attacker.action.u)
+            #         self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, attacker.state.p_pos+attacker.action.u*5000.0)
+            #         self.line[m+k].set_color(*attacker.color, alpha=0.5)
 
             m = len(self.line)
             for k, defender in enumerate(self.world.defenders):
