@@ -35,6 +35,7 @@ class MultiAgentEnv(gym.Env):
 
         # data save parameters
         self.intersc_area = 0
+        self.is_detected = False
 
         # terminate
         self.is_ternimate = False
@@ -136,6 +137,8 @@ class MultiAgentEnv(gym.Env):
                     agent.detect_phi = opt_detect[j]
                     agent.detect_area = agent.get_detect_area()
         
+        opt_detect = [agent.detect_phi for agent in self.agents]
+        self.is_detected = is_detected
         self.intersc_area = compute_area(opt_detect, self.world.targets[0].polygon_area, self.world.attackers)
 
         # is_detected = self.check_found_target(self.world)
@@ -401,14 +404,19 @@ class MultiAgentEnv(gym.Env):
             # for j in range(len(self.world.agents)):
             #     data_ = data_ + (j, self.world.agents[j].state.p_pos[0], self.world.agents[j].state.p_pos[1])
             # data_ = data_ + (self.q_md, self.q_md_dot)
-            
-            # for j in range(len(self.world.agents)):
-            #     print('agent move:',self.world.agents[j].action.u)
-            #     u_sqr = np.sum(self.world.agents[j].action.u**2)
-            #     data_ = data_ + (u_sqr)
-            # data_ = data_ + (self.intersc_area,)
-            
+
+            # for j , attacker in enumerate(self.world.attackers):
+            #     # print('agent{} move{}'.format(j,self.world.agents[j].action.u))
+            #     u_sqr = np.sum(attacker.action.u**2)
+            #     data_ = data_ + (j, attacker.state.p_pos[0], attacker.state.p_pos[1], 
+            #                      attacker.state.p_vel[0], attacker.state.p_vel[1], 
+            #                      attacker.detect_phi, u_sqr)
+            # for j , target in enumerate(self.world.targets):
+            #     data_ = data_ + (j, target.state.p_pos[0], target.state.p_pos[1], 
+            #                      target.state.p_vel[0], target.state.p_vel[1])
+            # data_ = data_ + (self.intersc_area, self.is_detected)
             # INFO.append(data_)
+            
             #csv
             
 

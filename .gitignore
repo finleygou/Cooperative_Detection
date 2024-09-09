@@ -18,3 +18,5 @@ logs
 *.log
 onpolicy/scripts/train_mpe_scripts/nohup.out
 *.txt
+*.iml
+*.xml

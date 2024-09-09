@@ -278,7 +278,7 @@ def get_config():
     parser.add_argument("--use_render", default=True, action='store_true', help="by default, do not render the env during training. If set, start render. Note: something, the environment has internal render process which is not controlled by this hyperparam.")
     parser.add_argument("--render_episodes", type=int, default=1, help="the number of episodes to render a given env")
     parser.add_argument("--ifi", type=float, default=0.1, help="the play interval of each rendered image in saved video.")
-    parser.add_argument("--save_data", default=True, help='use to save data in rendering')
+    parser.add_argument("--save_data", default=False, help='use to save data in rendering')
 
     # pretrained parameters
     parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
@@ -289,7 +289,7 @@ def get_config():
     parser.add_argument("--num_defender", type=int, default=0, help="the number of defenders")
     parser.add_argument("--num_agents", type=int, default=4, help="the number of agents that uses actor")
     parser.add_argument('--scenario_name', type=str,
-                        default='single_4v1', help="Which scenario to run on")
+                        default='single_4v1_RHC', help="Which scenario to run on")
     parser.add_argument("--num_landmarks", type=int, default=3)
 
     return parser

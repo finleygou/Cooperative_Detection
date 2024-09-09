@@ -32,7 +32,7 @@ def detection_optimization(target, attackers):
     # print('the initial direction is:', att_direction)
 
     res = scipy.optimize.minimize(compute_area, att_direction, args=(tar_poly, attackers_), 
-                            method='Nelder-Mead', bounds=bound)
+                            method='SLSQP', bounds=bound)
     x = res.x
 
     # 检验是否有poly与目标poly相交为空集，若有则更新该x朝向target
