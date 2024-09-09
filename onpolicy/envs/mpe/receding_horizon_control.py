@@ -40,7 +40,6 @@ def cost_function(u, *args):
     u = u.reshape((-1, len(attackers_)))
     h = u.shape[0]
 
-    
     cost = 0
     for i in range(h):
         # forward dynamics
@@ -73,12 +72,17 @@ def cost_function(u, *args):
 
     return cost
 
-def receding_horizon(target, attackers, dt):
+def receding_horizon(target, attackers, dt, u_res):
     # print("in receding horizon control")
 
     h = 5  # 预测步长
     N = len(attackers)
     u0 = np.zeros(h*N)  # 控制量, 拉成一行便于优化. u0 = [u1(1), u2(1), ..., uh]
+    # print("before u0: ", u0)
+    if u_res is not None:
+        u0[0:(h-1)*N] = u_res[N:]  # 用上一次的结果作为初始值
+    # print("after u0: ", u0)
+    
 
     target_ = copy.deepcopy(target)
     attackers_ = copy.deepcopy(attackers)
@@ -98,8 +102,10 @@ def receding_horizon(target, attackers, dt):
     res = scipy.optimize.minimize(cost_function, u0, args=(target_, attackers_, dt), 
                             method='SLSQP', bounds=bound)
     
-    u1 = res.x
-    u1 = np.array(u1[0:N])
+    u_res = res.x
+    u1 = np.array(u_res[0:N])  # 取第一个控制量
+
+    # print("u_res: ", u_res)
 
     # print("u0: ", u0[0:N])
     # print("u1: ", u1)
@@ -115,7 +121,7 @@ def receding_horizon(target, attackers, dt):
     del target_
     del attackers_
 
-    return u
+    return u, u_res
 
     
 

@@ -7,7 +7,7 @@ import setproctitle
 import numpy as np
 from pathlib import Path
 # print(os.getcwd())
-sys.path.insert(0, "D:\Courses\scientific_research\activity\coverage\code\Cooperative_Detection")
+sys.path.insert(0, "D:\Scientific_Research\activity\24_Coverage")
 
 import torch
 
@@ -78,7 +78,8 @@ def main(args):
     # else:
     #     print("choose to use cpu...")
     #     device = torch.device("cpu")
-    #     torch.set_num_threads(all_args.n_training_threads)
+    #     torch.set_num_thr
+    #     eads(all_args.n_training_threads)
     print("choose to use cpu...")
     device = torch.device("cpu")
     torch.set_num_threads(all_args.n_training_threads)

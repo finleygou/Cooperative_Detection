@@ -101,10 +101,11 @@ class Scenario(BaseScenario):
 
         init_pos_attacker = np.array([[0.0, 7.5], [0.0, 2.5], [0.0, -2.5], [0.0, -7.5]])
         init_pos_attacker = init_pos_attacker + np.random.randn(*init_pos_attacker.shape)*0.2
+        init_phi_attacker = np.array([deg2rad(32), deg2rad(22), deg2rad(-10), deg2rad(-27)])
         for i, attacker in enumerate(world.attackers):
             attacker.done = False
             attacker.state.p_pos = init_pos_attacker[i]
-            attacker.state.p_vel = np.array([attacker.max_speed, 0.0])
+            attacker.state.p_vel = np.array([np.cos(init_phi_attacker[i]), np.sin(init_phi_attacker[i])])*attacker.max_speed
             attacker.state.V = np.linalg.norm(attacker.state.p_vel)
             attacker.state.phi = 0.
             attacker.true_target = self.assign_list[i]

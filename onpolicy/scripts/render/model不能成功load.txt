@@ -1,2 +1,0 @@
---model_dir
-D:/Courses/scientific_research/activity/24_IROS/code/SwarmRoundUp_V2_pure_policy/onpolicy/scripts/render
