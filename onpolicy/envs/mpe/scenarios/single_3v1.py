@@ -2,9 +2,12 @@ import numpy as np
 from onpolicy.envs.mpe.core import World, Agent, Target, Attacker
 from onpolicy.envs.mpe.scenario import BaseScenario
 from onpolicy import global_var as glv
-import sys
 from util import *
 from shapely.geometry import Point
+
+'''
+ 2 attackers and 1 target 的场景
+'''
 
 '''
 距离单位: km
@@ -39,8 +42,8 @@ class Scenario(BaseScenario):
         world.world_length = args.episode_length
         # set any world properties first
         # add agents
-        world.targets = [Target() for i in range(self.num_target)]  # 4
-        world.attackers = [Attacker() for i in range(self.num_attacker)]  # 10
+        world.targets = [Target() for i in range(self.num_target)]  # 1
+        world.attackers = [Attacker() for i in range(self.num_attacker)]  # 3
         world.agents = world.targets+world.attackers
 
         for i, target in enumerate(world.targets):
@@ -48,16 +51,16 @@ class Scenario(BaseScenario):
             target.size = 0.1
             target.color = np.array([0.15, 0.95, 0.15]) #green
             target.color_true_pos = np.array([0.90, 0.60, 0.20]) #orange
-            target.max_speed = 1.0*Mach
-            target.max_accel = 5*G
+            target.max_speed = 1.5*Mach
+            target.max_accel = 9*G
             target.action_callback = target_policy
 
         for i, attacker in enumerate(world.attackers):
             attacker.id = i
             attacker.size = 0.1
             attacker.color = np.array([0.95, 0.15, 0.15])
-            attacker.max_speed = 4*Mach
-            attacker.max_accel = 15*G
+            attacker.max_speed = 4.5*Mach
+            attacker.max_accel = 40*G
             attacker.action_callback = attacker_policy
 
         # make initial conditions
@@ -70,7 +73,7 @@ class Scenario(BaseScenario):
         # print('init assign_list is:', self.assign_list)
 
         # properties and initial states for agents
-        init_pos_target = np.array([[24.0, 3.0], [20, 14.0], [22, -5.0], [21, -11.5]])
+        init_pos_target = np.array([[22.0, 0.0]])
         init_pos_target = init_pos_target + np.random.randn(*init_pos_target.shape)*0.2
         for i, target in enumerate(world.targets):
             target.done = False
@@ -84,18 +87,19 @@ class Scenario(BaseScenario):
             target.defenders = []
             target.cost = []
 
-            target.sigma_dist = 4  # 区域半径
+            target.sigma_dist = 7  # 区域半径
             rand_pos = np.random.uniform(0, 1, 2)
+            # rand_pos = [0.9, 0.25]
             r_, theta_ = target.sigma_dist*rand_pos[0], np.pi*2*rand_pos[1]
             target.state.p_pos_true = target.state.p_pos + np.array([r_*np.cos(theta_), r_*np.sin(theta_)])
             # target.state.p_pos_true = target.state.p_pos + np.array([-0.4, -0.8])*target.sigma_dist
             target.area_mode = 4  # 1:长方形  2:5边形  3:6边形  4:圆形
+            target.mode = 2 # 1:直线  2:S型 3:圆形 4:L机动
             target.polygon_area = target.get_area()
 
 
-        init_pos_attacker = np.array([[-1.2, 10.5], [2.0, 7.5], [3.0, 5.0], [0.3, 3.0], [-0.5, 0.4],
-                                      [1.0, -3.5], [3.5, -5.0], [0.0, -7.0], [-0.2, -9.5], [2.5, -13.5]])
-        init_pos_attacker = init_pos_attacker + np.random.randn(*init_pos_attacker.shape)*0.1
+        init_pos_attacker = np.array([[0.4, 9.2], [0.1, 0.3], [0.2, -7.8]])
+        init_pos_attacker = init_pos_attacker + np.random.randn(*init_pos_attacker.shape)*0.2
         for i, attacker in enumerate(world.attackers):
             attacker.done = False
             attacker.state.p_pos = init_pos_attacker[i]
@@ -110,6 +114,8 @@ class Scenario(BaseScenario):
             attacker.is_locked = False
             # attacker.defenders = []
 
+            attacker.detect_dist = 20  # km, max detection distance
+            attacker.single_area_angle = deg2rad(3)  # 单边最大探测角
             attacker.detect_phi = attacker.get_init_detect_direction(world.targets[0].state.p_pos-attacker.state.p_pos)
             attacker.detect_area = attacker.get_detect_area()
 
@@ -124,7 +130,7 @@ class Scenario(BaseScenario):
             return collisions
         else:
             return 0
-
+        
     def is_collision(self, agent1, agent2):
         if agent2.name == 'target':
             dist = np.linalg.norm(agent1.state.p_pos - agent2.state.p_pos_true)
@@ -160,57 +166,6 @@ class Scenario(BaseScenario):
 
     # individual adversary award
     def attacker_reward(self, attacker, world):  # agent here is adversary
-        '''
-        r_k : reward for killing target or being killed
-        r_d : reward for deception situation
-        r_s : reward for switch in belief (actually penalty)
-        r_p : penalty for choosing a dead fake target
-        '''
-        # r_k, r_s, r_p, r_d = 0, 0, 0, 0
-
-        # # 好的奖励持续给，坏奖励只给一次
-        # # reward kill
-        # if attacker.flag_kill:
-        #     # attacker.flag_kill = False
-        #     r_k = 10
-        # # penalty being killed
-        # if attacker.flag_dead:
-        #     attacker.flag_dead = False
-        #     r_k = -8
-
-        # if not attacker.done:
-        #     # switch in belief
-        #     if attacker.last_belief != attacker.fake_target:
-        #         r_s = -1
-            
-        #     # prevent choosing dead target
-        #     if world.targets[attacker.fake_target].done:
-        #         r_p = -2
-
-        #     # deception reward using apollonius circle
-        #     target = world.targets[attacker.true_target]
-        #     alpha = target.state.V / attacker.state.V
-        #     r1, r2, r3, r4 = 3, 1, 0, -1
-        #     for i, defender_id in enumerate(attacker.defenders):
-        #         defender = world.defenders[defender_id]
-        #         beta = defender.state.V / attacker.state.V
-        #         x_ad = defender.state.p_pos - attacker.state.p_pos
-        #         r_ = np.linalg.norm(x_ad)
-        #         e_ad = x_ad / r_
-        #         x_at = target.state.p_pos - attacker.state.p_pos
-        #         R_ = np.linalg.norm(x_at)
-        #         e_at = x_at / R_
-        #         cos_ = np.dot(e_at, e_ad)
-        #         cos_Theta = (r_*r_ + R_*R_ - (alpha*r_+beta*R_)**2)/(2*r_*R_)
-        #         cos_eta_gamma = np.sqrt((1-alpha**2)*(1-beta**2))-alpha*beta
-        #         if -1 <= cos_ <cos_eta_gamma:
-        #             r_p += r2 + (r1-r2)/(-1-cos_eta_gamma)*(cos_ - cos_eta_gamma)
-        #         elif cos_eta_gamma <= cos_ < cos_Theta:
-        #             r_p += r2 + (r3-r2)/(cos_Theta-cos_eta_gamma)*(cos_ - cos_eta_gamma)
-        #         else:
-        #             r_p += r3 + (r4-r3)/(1-cos_Theta)*(cos_ - cos_Theta)
-
-        # rew = r_k + r_s + r_p + r_d
         rew = 1
 
         return rew
@@ -266,25 +221,12 @@ class Scenario(BaseScenario):
         if len(target_list) > 0:
             # calculate the cost matrix
             T = np.zeros((len(attacker_list), len(target_list)))
-            if self.init_assign:
-                for i, attacker in enumerate(attacker_list):
-                    for j, target in enumerate(target_list):
-                        T[i, j] = get_coverage_cost_AT(attacker, target)
-                assign_result = target_assign(T)  # 线性规划，初次分配解
-                self.init_assign = False
-            else: 
-                # 非线性整数规划，最大化探测面积
-                # assign_result = target_assign_NonlinearInteger(T, attacker_list, target_list)  # |A|*|T|的矩阵
-            
-                for i, attacker in enumerate(attacker_list):
-                    for j, target in enumerate(target_list):
-                        T[i, j] = get_coverage_cost_AT(attacker, target)
-                assign_result = target_assign(T)  # 线性规划，初次分配解
-            # print('assign_result is:', assign_result)
+            for i, attacker in enumerate(attacker_list):
+                for j, target in enumerate(target_list):
+                    T[i, j] = get_coverage_cost_AT(attacker, target)
 
-            '''
-            如果assign报错，检查'TAD list，查看A的list是否为空。如果全部A被拦截，不需要update belief
-            '''
+            assign_result = target_assign(T)  # |A|*|T|的矩阵
+
             # update belief list of TDs according to assign_result
             for i, attacker in enumerate(attacker_list):  # 遍历行
                 for j in range(len(target_list)):
@@ -293,7 +235,7 @@ class Scenario(BaseScenario):
                         attacker.true_target = target_list[j].id
                         target = target_list[j]
                         target.attackers.append(attacker.id)
-                        # target.cost.append(T[i, j])
+                        target.cost.append(T[i, j])
             
             # 为target从list中选择AD
             for i, target in enumerate(target_list):
@@ -304,7 +246,6 @@ class Scenario(BaseScenario):
                     # 有的target已经不需要A了，A太少了
                     # target.defender = np.random.choice(defender_id_list)
                     target.attacker = np.random.choice(attacker_id_list)
-            # print('T believes are:', )
 
     def check_found_target(self, target, world):
 
@@ -338,11 +279,25 @@ def target_policy(target, mode, t):
 
     elif mode == 2:
         # S型运动
-        return np.array([np.sin(t), np.cos(t)])
+        # return np.array([np.sin(t), np.cos(t)])
+        # 正弦轨迹参数
+        A = np.pi/6  # 角度振幅
+        T = 5     # 周期
+        v = target.max_speed  # 保持不变的速度大小
+        theta_ref = A * np.sin(2 * np.pi * t / T)
+        omega = A * (2 * np.pi / T) * np.cos(2 * np.pi * t / T)
+        u_norm = v * omega
+        if abs(u_norm) > target.max_accel:
+            u_norm = target.max_accel * np.sign(u_norm)
+        e_v = target.state.p_vel / np.linalg.norm(target.state.p_vel)
+        e_uq = np.array([- e_v[1], e_v[0]])
+        u = np.multiply(u_norm, e_uq)
+
+        return u
 
     elif mode == 3:
         # 圆形运动
-        r_ = 5  # 圆的半径
+        r_ = 6  # 圆的半径
         a_norm = target.state.V**2 / r_
         if a_norm > target.max_accel:
             a_norm = target.max_accel
@@ -351,6 +306,21 @@ def target_policy(target, mode, t):
         a = a_norm * e_uq
 
         return a
+    
+    elif mode == 4:
+        # L机动躲导弹
+        a = np.array([0, 0])
+        if t < 2:
+            a = np.array([0, 0])
+        elif target.state.p_vel[0] > 0.01:
+            a_norm = target.max_accel
+            e_vt = target.state.p_vel / np.linalg.norm(target.state.p_vel)
+            e_uq = np.array([- e_vt[1], e_vt[0]])
+            a = a_norm * e_uq
+        else:
+            a = np.array([0, 0])
+
+    return a
 
 '''
 def defender_policy(target, attacker, defender):

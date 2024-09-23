@@ -183,10 +183,6 @@ def get_config():
     parser.add_argument("--use_obs_instead_of_state", action='store_true',
                         default=False, help="Whether to use global state or concatenated obs")
 
-    # replay buffer parameters
-    parser.add_argument("--episode_length", type=int,
-                        default=800, help="Max length for any episode")  # 500
-
     # network parameters
     parser.add_argument("--share_policy", default=True, help='Whether agent share the same policy')
     parser.add_argument("--use_centralized_V", default=True, help="Whether to use centralized V function")
@@ -279,9 +275,16 @@ def get_config():
     parser.add_argument("--render_episodes", type=int, default=1, help="the number of episodes to render a given env")
     parser.add_argument("--ifi", type=float, default=0.1, help="the play interval of each rendered image in saved video.")
     parser.add_argument("--save_data", default=False, help='use to save data in rendering')
+    parser.add_argument("--only_detect", default=False, help='finish the episode once the target is detected, jump over the attack phase')
+    parser.add_argument("--monte_carlo_test", default=False, help='if true, no image will be shown during render')
+    parser.add_argument("--detect_mode", type=str,
+                        default='optimize', choices=["optimize", "parallel", "center", "straight"], help="Which mode to run on")
 
     # pretrained parameters
     parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
+
+#   replay buffer parameters
+    parser.add_argument("--episode_length", type=int, default=1200, help="Max length for any episode")  # 500
 
     # entity number parameters
     parser.add_argument("--num_target", type=int, default=1, help="the number of targets")
@@ -289,7 +292,7 @@ def get_config():
     parser.add_argument("--num_defender", type=int, default=0, help="the number of defenders")
     parser.add_argument("--num_agents", type=int, default=4, help="the number of agents that uses actor")
     parser.add_argument('--scenario_name', type=str,
-                        default='single_4v1', help="Which scenario to run on")
+                        default='single_4v1_RHC', help="Which scenario to run on")
     parser.add_argument("--num_landmarks", type=int, default=3)
 
     return parser

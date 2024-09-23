@@ -19,7 +19,7 @@ class MultiAgentEnv(gym.Env):
         'render.modes': ['human', 'rgb_array']
     }
 
-    def __init__(self, world, reset_callback=None, reward_callback=None,
+    def __init__(self, args, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,  # 以上callback是通过MPE_env跑通的
                  done_callback=None, update_belief=None, check_found_target=None,  # 以上callback是通过MPE_env跑通的
                  post_step_callback=None,shared_viewer=True, 
@@ -27,18 +27,32 @@ class MultiAgentEnv(gym.Env):
         # discrete_action为false,即指定动作为Box类型
 
         # set CL
+        self.args = args
+        self.detect_mode = args.detect_mode
+        self.only_detect = args.only_detect
+        self.INFO_flag = 0
         self.use_policy = 1
         self.use_CL = 0
         self.CL_ratio = 0
         self.Cp = 0.6  # 1.0 # 0.3
         self.JS_thre = 0
 
+        # 记录render的轮数
+        self.round = 0
+
         # terminate
-        self.is_ternimate = False
+        self.is_terminate = False
+        self.is_detected = False
+        self.detect_step = 0
+        self.is_first_detect = True
+
+        # max area during detection
+        self.max_Area = 0
 
         self.world = world
         self.world_length = self.world.world_length
         self.current_step = 0
+        self.last_step = 0
         self.agents = self.world.attackers
         # set required vectorized gym env property
         self.n = len(self.world.attackers)
@@ -107,10 +121,12 @@ class MultiAgentEnv(gym.Env):
     # step  this is  env.step()
     def step(self, action_n):  # action_n: action for all policy agents, concatenated, from MPErunner
         self.current_step += 1
+        self.last_step = self.current_step-1
         obs_n = []
         reward_n = []  # concatenated reward for each agent
         done_n = []
         info_n = []
+        is_detected_m = []
         start_ratio = 0.80
         self.JS_thre = int(self.world_length*start_ratio*set_JS_curriculum(self.CL_ratio/self.Cp))
 
@@ -118,32 +134,32 @@ class MultiAgentEnv(gym.Env):
         for i, agent in enumerate(self.agents):  # attacker
             self._set_action(action_n[i], agent, self.action_space[i])
 
-        # 检查目标的真实位置是否被探测到
+        # 解算探测朝向，同时检查目标的真实位置是否被探测到
         for i, target in enumerate(self.world.targets):
             is_detected = self.check_found_target(target, self.world)
             attackers_i = [agent for agent in self.agents if agent.id in target.attackers]
+            is_detected_m.append(is_detected)
+
+            # detection mode selection
             if is_detected:
-                for agent in attackers_i:
-                    agent.detect_phi = agent.get_init_detect_direction(target.state.p_pos-agent.state.p_pos)
-                    agent.detect_area = agent.get_detect_area()
+                opt_detect = center_detection(target, attackers_i)
             else:
-                # optimize the detecting direction and set direction for agents
-                opt_detect = detection_optimization(target, attackers_i)
+                if self.detect_mode == 'optimize':
+                    opt_detect = detection_optimization(target, attackers_i)
+                elif self.detect_mode == 'parallel':
+                    opt_detect = parallel_optimization(target, attackers_i)
+                elif self.detect_mode == 'center':
+                    opt_detect = center_detection(target, attackers_i)
+                elif self.detect_mode == 'straight':
+                    opt_detect = [0] * self.n
+
                 for j, agent in enumerate(attackers_i):
                     agent.detect_phi = opt_detect[j]
                     agent.detect_area = agent.get_detect_area()
-
-        # is_detected = self.check_found_target(self.world)
-        # if is_detected:
-        #     for agent in self.agents:
-        #         agent.detect_phi = agent.get_init_detect_direction(self.world.targets[0].state.p_pos-agent.state.p_pos)
-        #         agent.detect_area = agent.get_detect_area()
-        # else:
-        #     # optimize the detecting direction and set direction for agents
-        #     opt_detect = detection_optimization(self.world.targets, self.world.attackers)
-        #     for i, agent in enumerate(self.agents):
-        #         agent.detect_phi = opt_detect[i]
-        #         agent.detect_area = agent.get_detect_area()
+            
+            # 记录最大的探测覆盖，保存数据用
+            current_area = - compute_area(opt_detect, target.polygon_area, attackers_i)
+            self.max_Area = max(self.max_Area, current_area)
 
         # advance world state
         self.world.step()  # core.step(), after done, all stop. 不能传参
@@ -157,6 +173,7 @@ class MultiAgentEnv(gym.Env):
             env_info = self._get_info(agent)
             if 'fail' in env_info.keys():
                 info['fail'] = env_info['fail']
+            info['round'] = self.round
             info_n.append(info)
 
         # all agents get total reward in cooperative case, if shared reward, all agents have the same reward, and reward is sum
@@ -180,18 +197,32 @@ class MultiAgentEnv(gym.Env):
             if agent.done:
                 current_dead += 1
         
-        self.is_ternimate = True if all(terminate) else False
-        if self.is_ternimate:
+        is_detected_ = True if any(is_detected_m) else False
+        self.is_terminate = True if all(terminate) else False
+
+        if is_detected_ and self.is_first_detect:
+            self.is_detected = True
+            self.detect_step = self.current_step
+            self.is_first_detect = False
+            if self.only_detect:
+                done_n = [True] * self.n
+                self.is_first_detect = True  # done when detected
+                self.is_terminate = True
+
+        if self.is_terminate:
             # 所有target都被kill
             done_n = [True] * self.n
-        
-        
+            self.round += 1
+
+        # print("self.terminate:", self.is_terminate)
+        # print("current_step:", self.current_step)
+        # print("done_n:", done_n)    
+
         # re-assign goals for TADs
         if self.update_belief is not None and not all(done_n):  # 若全部targets or attackers都被kill，则不需要更新
             if self.current_step % 10 == 0 and self.current_step < 40:
                 # if there is change in attacker belief or some agent is killed
                 self.update_belief(self.world)
-                # print("update belief")
         
 
         self.world.cnt_dead = current_dead
@@ -231,10 +262,16 @@ class MultiAgentEnv(gym.Env):
     def _get_done(self, agent):
         if self.done_callback is None:
             if self.current_step >= self.world_length:
+                self.round += 1
                 return True
             else:
                 return False
-        return self.done_callback(agent, self.world)
+        else:
+            if self.current_step >= self.world_length:
+                self.round += 1
+                return True
+            else:
+                return self.done_callback(agent, self.world)
 
     # get reward for a particular agent
     def _get_reward(self, agent):
@@ -270,213 +307,248 @@ class MultiAgentEnv(gym.Env):
         self.render_geoms_xform = None
 
     def render(self, mode='human', close=False):
-        if close:
-            # close any existic renderers
-            for i, viewer in enumerate(self.viewers):
-                if viewer is not None:
-                    viewer.close()
-                self.viewers[i] = None
-            return []
-        if mode == 'human':
-            alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-            message = ''
-            for agent in self.world.agents:
-                comm = []
-                for other in self.world.agents:
-                    if other is agent:
-                        continue
-                    if np.all(other.state.c == 0):
-                        word = '_'
-                    else:
-                        word = alphabet[np.argmax(other.state.c)]
-                    message += (other.name + ' to ' +
-                                agent.name + ': ' + word + '   ')
-            # print(message)
-        for i in range(len(self.viewers)):
-            # create viewers (if necessary)
-            if self.viewers[i] is None:
+        if self.args.monte_carlo_test:
+            for i in range(len(self.viewers)):
+                # print("render_step:", self.current_step)
+                # 先进入这个render， 再执行environment的step。此处领先一个step
+                # render steps： 0,1,2,3...199,  0,1,2,3...
+                # print("round {} current_step {} last_step {} detected:{} destroyed:{}".format(self.round, self.current_step, self.last_step, self.is_detected, self.is_terminate))
+                if self.is_terminate==True and self.INFO_flag == 0:  # 在常规时间内拦截到目标
+                    data_ = ()
+                    data_ = data_ + (self.last_step, self.detect_step, self.max_Area,
+                                     int(self.is_detected), int(self.is_terminate),)
+                    INFO.append(data_)  # 增加行
+                    self.INFO_flag = 1
+                    print("1round {} current_step {} detected:{} destroyed:{}".format(self.round, self.current_step, self.is_detected, self.is_terminate))
+                #csv
+                elif self.is_terminate==False and self.current_step == self.world_length-1 and self.INFO_flag == 0:  # 终端也没有抓住
+                    data_ = ()
+                    data_ = data_ + (0, self.detect_step, self.max_Area,
+                                     int(self.is_detected), int(self.is_terminate),)
+                    INFO.append(data_)  # 增加行
+                    print("2round {} current_step {} detected:{} destroyed:{}".format(self.round, self.current_step, self.is_detected, self.is_terminate))
+                
+                if self.current_step == 0:
+                    # self.round += 1  # done 里面已经加了
+                    self.is_first_detect = True
+                    self.max_Area = 0
+                    self.INFO_flag = 0
+                    self.detect_step = 0
+                    self.is_terminate=False
+                    self.is_detected=False                    
+        else:
+            # render environment
+            if close:
+                # close any existic renderers
+                for i, viewer in enumerate(self.viewers):
+                    if viewer is not None:
+                        viewer.close()
+                    self.viewers[i] = None
+                return []
+            if mode == 'human':
+                alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+                message = ''
+                for agent in self.world.agents:
+                    comm = []
+                    for other in self.world.agents:
+                        if other is agent:
+                            continue
+                        if np.all(other.state.c == 0):
+                            word = '_'
+                        else:
+                            word = alphabet[np.argmax(other.state.c)]
+                        message += (other.name + ' to ' +
+                                    agent.name + ': ' + word + '   ')
+                # print(message)
+            for i in range(len(self.viewers)):
+                # create viewers (if necessary)
+                if self.viewers[i] is None:
+                    # import rendering only if we need it (and don't import for headless machines)
+                    #from gym.envs.classic_control import rendering
+                    from . import rendering
+                    # print('sucessfully imported rendering')
+                    self.viewers[i] = rendering.Viewer(700, 700)
+            # create rendering geometry
+            if self.render_geoms is None:
+                '''
+                only enter here once at the beginning
+                '''
                 # import rendering only if we need it (and don't import for headless machines)
                 #from gym.envs.classic_control import rendering
                 from . import rendering
-                # print('sucessfully imported rendering')
-                self.viewers[i] = rendering.Viewer(700, 700)
-        # create rendering geometry
-        if self.render_geoms is None:
-            '''
-            only enter here once at the beginning
-            '''
-            # import rendering only if we need it (and don't import for headless machines)
-            #from gym.envs.classic_control import rendering
-            from . import rendering
-            self.render_geoms = []
-            self.render_geoms_xform = []
-            self.line = {}
-            self.comm_geoms = []
-            for entity in self.world.entities:
-                geom = rendering.make_circle(0.25)  # entity.size
-                xform = rendering.Transform()
+                self.render_geoms = []
+                self.render_geoms_xform = []
+                self.line = {}
+                self.comm_geoms = []
+                for entity in self.world.entities:
+                    geom = rendering.make_circle(0.25)  # entity.size
+                    xform = rendering.Transform()
 
-                entity_comm_geoms = []
-                if 'agent' in entity.name:
-                    geom.set_color(*entity.color, alpha=0.5)
+                    entity_comm_geoms = []
+                    if 'agent' in entity.name:
+                        geom.set_color(*entity.color, alpha=0.5)
 
-                    if not entity.silent:
-                        dim_c = self.world.dim_c  # 0
-                        # make circles to represent communication
-                        for ci in range(dim_c):
-                            comm = rendering.make_circle(entity.size / dim_c)
-                            comm.set_color(1, 1, 1)
-                            comm.add_attr(xform)
-                            offset = rendering.Transform()
-                            comm_size = (entity.size / dim_c)
-                            offset.set_translation(ci * comm_size * 2 -
-                                                   entity.size + comm_size, 0)
-                            comm.add_attr(offset)
-                            entity_comm_geoms.append(comm)
+                        if not entity.silent:
+                            dim_c = self.world.dim_c  # 0
+                            # make circles to represent communication
+                            for ci in range(dim_c):
+                                comm = rendering.make_circle(entity.size / dim_c)
+                                comm.set_color(1, 1, 1)
+                                comm.add_attr(xform)
+                                offset = rendering.Transform()
+                                comm_size = (entity.size / dim_c)
+                                offset.set_translation(ci * comm_size * 2 -
+                                                    entity.size + comm_size, 0)
+                                comm.add_attr(offset)
+                                entity_comm_geoms.append(comm)
 
-                else:
-                    geom.set_color(*entity.color)
-                    if entity.channel is not None:
-                        dim_c = self.world.dim_c
-                        # make circles to represent communication
-                        for ci in range(dim_c):
-                            comm = rendering.make_circle(entity.size / dim_c)
-                            comm.set_color(1, 1, 1)
-                            comm.add_attr(xform)
-                            offset = rendering.Transform()
-                            comm_size = (entity.size / dim_c)
-                            offset.set_translation(ci * comm_size * 2 -
-                                                   entity.size + comm_size, 0)
-                            comm.add_attr(offset)
-                            entity_comm_geoms.append(comm)
-                geom.add_attr(xform)
-                self.render_geoms.append(geom)
-                self.render_geoms_xform.append(xform)
-                self.comm_geoms.append(entity_comm_geoms)
-            
-            for wall in self.world.walls:
-                corners = ((wall.axis_pos - 0.5 * wall.width, wall.endpoints[0]),
-                           (wall.axis_pos - 0.5 *
-                            wall.width, wall.endpoints[1]),
-                           (wall.axis_pos + 0.5 *
-                            wall.width, wall.endpoints[1]),
-                           (wall.axis_pos + 0.5 * wall.width, wall.endpoints[0]))
-                if wall.orient == 'H':
-                    corners = tuple(c[::-1] for c in corners)
-                geom = rendering.make_polygon(corners)
-                if wall.hard:
-                    geom.set_color(*wall.color)
-                else:
-                    geom.set_color(*wall.color, alpha=0.5)
-                self.render_geoms.append(geom)
+                    else:
+                        geom.set_color(*entity.color)
+                        if entity.channel is not None:
+                            dim_c = self.world.dim_c
+                            # make circles to represent communication
+                            for ci in range(dim_c):
+                                comm = rendering.make_circle(entity.size / dim_c)
+                                comm.set_color(1, 1, 1)
+                                comm.add_attr(xform)
+                                offset = rendering.Transform()
+                                comm_size = (entity.size / dim_c)
+                                offset.set_translation(ci * comm_size * 2 -
+                                                    entity.size + comm_size, 0)
+                                comm.add_attr(offset)
+                                entity_comm_geoms.append(comm)
+                    geom.add_attr(xform)
+                    self.render_geoms.append(geom)
+                    self.render_geoms_xform.append(xform)
+                    self.comm_geoms.append(entity_comm_geoms)
+                
+                for wall in self.world.walls:
+                    corners = ((wall.axis_pos - 0.5 * wall.width, wall.endpoints[0]),
+                            (wall.axis_pos - 0.5 *
+                                wall.width, wall.endpoints[1]),
+                            (wall.axis_pos + 0.5 *
+                                wall.width, wall.endpoints[1]),
+                            (wall.axis_pos + 0.5 * wall.width, wall.endpoints[0]))
+                    if wall.orient == 'H':
+                        corners = tuple(c[::-1] for c in corners)
+                    geom = rendering.make_polygon(corners)
+                    if wall.hard:
+                        geom.set_color(*wall.color)
+                    else:
+                        geom.set_color(*wall.color, alpha=0.5)
+                    self.render_geoms.append(geom)
 
-            # add geoms to viewer
-            for viewer in self.viewers:
-                viewer.geoms = []
-                for geom in self.render_geoms:
-                    viewer.add_geom(geom)
-                for entity_comm_geoms in self.comm_geoms:
-                    for geom in entity_comm_geoms:
+                # add geoms to viewer
+                for viewer in self.viewers:
+                    viewer.geoms = []
+                    for geom in self.render_geoms:
                         viewer.add_geom(geom)
+                    for entity_comm_geoms in self.comm_geoms:
+                        for geom in entity_comm_geoms:
+                            viewer.add_geom(geom)
 
-        results = []
-        for i in range(len(self.viewers)):
-            from . import rendering
+            results = []
+            for i in range(len(self.viewers)):
+                from . import rendering
 
-            if self.shared_viewer:
-                pos = np.zeros(self.world.dim_p)
-            else:
-                pos = self.agents[i].state.p_pos
-            self.viewers[i].set_bounds(-10, 70, -40, 40)  # 必须是正方形才能做到1：1
-            # x_left, x_right, y_bottom, y_top
-            
-            
-            ############################### csv save
-            data_ = ()
-            # for j in range(len(self.world.agents)):
-            #     data_ = data_ + (j, self.world.agents[j].state.p_pos[0], self.world.agents[j].state.p_pos[1])
-            # data_ = data_ + (self.q_md, self.q_md_dot)
-            # INFO.append(data_)
-            # #csv
-            
-
-            # update geometry positions
-            for e, entity in enumerate(self.world.entities):
-                self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
-                # 绘制agent速度
-                self.line[e] = self.viewers[i].draw_line(entity.state.p_pos, entity.state.p_pos+entity.state.p_vel*3.0)
-
-                # if entity.name == 'attacker' and not entity.done:
-                #     self.line[e] = self.viewers[i].draw_line(entity.state.p_pos, self.world.targets[entity.fake_target].state.p_pos)
-
-                if 'agent' in entity.name:
-                    self.render_geoms[e].set_color(*entity.color, alpha=0.5)
-                    self.line[e].set_color(*entity.color, alpha=0.5)
-
-                    if not entity.silent:
-                        for ci in range(self.world.dim_c):
-                            color = 1 - entity.state.c[ci]
-                            self.comm_geoms[e][ci].set_color(
-                                color, color, color)
+                if self.shared_viewer:
+                    pos = np.zeros(self.world.dim_p)
                 else:
-                    self.render_geoms[e].set_color(*entity.color)
-                    if entity.channel is not None:
-                        for ci in range(self.world.dim_c):
-                            color = 1 - entity.channel[ci]
-                            self.comm_geoms[e][ci].set_color(
-                                color, color, color)
-                            
-            m = len(self.render_geoms)
-            for k, target in enumerate(self.world.targets):
-                geom = rendering.make_moving_circle(radius=0.25, pos=target.state.p_pos_true)  # entity.size
-                geom.set_color(*target.color_true_pos)
-                self.render_geoms.append(geom)
-                self.render_geoms[m+k] = self.viewers[i].draw_moving_circle(radius=0.25, color=target.color_true_pos, pos=target.state.p_pos_true)
-                self.line[m+k] = self.viewers[i].draw_line(target.state.p_pos_true, target.state.p_pos_true+target.state.p_vel*3.0)
-            
-            # plot the detecting area polygons
-            m = len(self.render_geoms)
-            for k, attacker in enumerate(self.world.attackers):
-                pts = attacker.detect_area.exterior.coords[:-1]
-                geom = rendering.make_polygon(pts)
-                geom.set_color(*attacker.color, alpha=0.1)
-                self.render_geoms.append(geom)
-                self.render_geoms[m+k] = self.viewers[i].draw_polygon(pts, color=attacker.color, filled=False)
+                    pos = self.agents[i].state.p_pos
+                self.viewers[i].set_bounds(-10, 70, -40, 40)  # 必须是正方形才能做到1：1
+                # x_left, x_right, y_bottom, y_top
+                
+                
+                ############################### csv save
+                data_ = ()
+                for j, att in enumerate(self.world.attackers):
+                    u_i_square = np.sum(att.action.u**2)
+                    data_ = data_ + (j, att.state.p_pos[0], att.state.p_pos[1],
+                                     att.state.p_vel[0], att.state.p_vel[1],
+                                     att.state.phi, att.detect_phi, u_i_square)
+                data_ = data_ + (self.world.targets[0].state.p_pos[0], self.world.targets[0].state.p_pos[1],
+                                    self.world.targets[0].state.p_vel[0], self.world.targets[0].state.p_vel[1])
+                
+                INFO.append(data_)
+                #csv
 
-            m = len(self.render_geoms)
-            for k, target in enumerate(self.world.targets):
-                pts = target.get_area().exterior.coords[:-1]
-                geom = rendering.make_polygon(pts)
-                geom.set_color(*target.color, alpha=0.1)
-                self.render_geoms.append(geom)
-                self.render_geoms[m+k] = self.viewers[i].draw_polygon(pts, color=target.color, filled=False)
+                # update geometry positions
+                for e, entity in enumerate(self.world.entities):
+                    self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
+                    # 绘制agent速度
+                    self.line[e] = self.viewers[i].draw_line(entity.state.p_pos, entity.state.p_pos+entity.state.p_vel*3.0)
 
-            # 弹目连线
-            m = len(self.line)
-            for k, attacker in enumerate(self.world.attackers):
-                if not attacker.done:
-                    self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, self.world.targets[attacker.fake_target].state.p_pos)
-                    self.line[m+k].set_color(*attacker.color, alpha=0.5)
+                    # if entity.name == 'attacker' and not entity.done:
+                    #     self.line[e] = self.viewers[i].draw_line(entity.state.p_pos, self.world.targets[entity.fake_target].state.p_pos)
 
-            # 加速度大小
-            # m = len(self.line)
-            # for k, attacker in enumerate(self.world.attackers):
-            #     if not attacker.done:
-            #         # print('action is:',attacker.action.u)
-            #         self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, attacker.state.p_pos+attacker.action.u*5000.0)
-            #         self.line[m+k].set_color(*attacker.color, alpha=0.5)
+                    if 'agent' in entity.name:
+                        self.render_geoms[e].set_color(*entity.color, alpha=0.5)
+                        self.line[e].set_color(*entity.color, alpha=0.5)
 
-            m = len(self.line)
-            for k, defender in enumerate(self.world.defenders):
-                if not defender.done:
-                    self.line[m+k] = self.viewers[i].draw_line(defender.state.p_pos, self.world.attackers[defender.attacker].state.p_pos)
-                    self.line[m+k].set_color(*defender.color, alpha=0.5)
+                        if not entity.silent:
+                            for ci in range(self.world.dim_c):
+                                color = 1 - entity.state.c[ci]
+                                self.comm_geoms[e][ci].set_color(
+                                    color, color, color)
+                    else:
+                        self.render_geoms[e].set_color(*entity.color)
+                        if entity.channel is not None:
+                            for ci in range(self.world.dim_c):
+                                color = 1 - entity.channel[ci]
+                                self.comm_geoms[e][ci].set_color(
+                                    color, color, color)
+                                
+                m = len(self.render_geoms)
+                for k, target in enumerate(self.world.targets):
+                    geom = rendering.make_moving_circle(radius=0.25, pos=target.state.p_pos_true)  # entity.size
+                    geom.set_color(*target.color_true_pos)
+                    self.render_geoms.append(geom)
+                    self.render_geoms[m+k] = self.viewers[i].draw_moving_circle(radius=0.25, color=target.color_true_pos, pos=target.state.p_pos_true)
+                    self.line[m+k] = self.viewers[i].draw_line(target.state.p_pos_true, target.state.p_pos_true+target.state.p_vel*3.0)
+                
+                # plot the detecting area polygons
+                m = len(self.render_geoms)
+                for k, attacker in enumerate(self.world.attackers):
+                    pts = attacker.detect_area.exterior.coords[:-1]
+                    geom = rendering.make_polygon(pts)
+                    geom.set_color(*attacker.color, alpha=0.1)
+                    self.render_geoms.append(geom)
+                    self.render_geoms[m+k] = self.viewers[i].draw_polygon(pts, color=attacker.color, filled=False)
+
+                m = len(self.render_geoms)
+                for k, target in enumerate(self.world.targets):
+                    pts = target.get_area().exterior.coords[:-1]
+                    geom = rendering.make_polygon(pts)
+                    geom.set_color(*target.color, alpha=0.1)
+                    self.render_geoms.append(geom)
+                    self.render_geoms[m+k] = self.viewers[i].draw_polygon(pts, color=target.color, filled=False)
+
+                # 弹目连线
+                m = len(self.line)
+                for k, attacker in enumerate(self.world.attackers):
+                    if not attacker.done:
+                        self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, self.world.targets[attacker.fake_target].state.p_pos)
+                        self.line[m+k].set_color(*attacker.color, alpha=0.5)
+
+                # 加速度大小
+                # m = len(self.line)
+                # for k, attacker in enumerate(self.world.attackers):
+                #     if not attacker.done:
+                #         # print('action is:',attacker.action.u)
+                #         self.line[m+k] = self.viewers[i].draw_line(attacker.state.p_pos, attacker.state.p_pos+attacker.action.u*5000.0)
+                #         self.line[m+k].set_color(*attacker.color, alpha=0.5)
+
+                m = len(self.line)
+                for k, defender in enumerate(self.world.defenders):
+                    if not defender.done:
+                        self.line[m+k] = self.viewers[i].draw_line(defender.state.p_pos, self.world.attackers[defender.attacker].state.p_pos)
+                        self.line[m+k].set_color(*defender.color, alpha=0.5)
 
 
-            # render to display or array
-            results.append(self.viewers[i].render(return_rgb_array=mode == 'rgb_array'))
+                # render to display or array
+                results.append(self.viewers[i].render(return_rgb_array=mode == 'rgb_array'))
 
-        return results
+            return results
 
     # create receptor field locations in local coordinate frame
     def _make_receptor_locations(self, agent):

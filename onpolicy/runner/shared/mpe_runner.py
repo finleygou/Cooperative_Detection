@@ -236,38 +236,42 @@ class MPERunner(Runner):
         envs = self.envs
         
         all_frames = []
-        for episode in range(self.all_args.render_episodes):
-            # obs = envs.reset()
+        
+        # obs = envs.reset()
+        if self.all_args.save_gifs:
+            image = envs.render('rgb_array')[0][0]  # imshow
+            all_frames.append(image)
+        else:
+            envs.render('human')
+
+        rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+        masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        
+        episode_rewards = []
+        
+        # for step in range(self.episode_length):
+        round = 0
+        round_num = self.all_args.render_episodes
+        calc_start = time.time()
+        while round < round_num:
+            # print("round: " + str(round))
+            actions_env = np.zeros((1, 500, 2))
+            # Obser reward and next obs
+            obs, rewards, dones, infos = envs.step(actions_env)
+            if infos[0][0]['round'] > round:
+                round = infos[0][0]['round']
+
             if self.all_args.save_gifs:
-                image = envs.render('rgb_array')[0][0]  # imshow
+                image = envs.render('rgb_array')[0][0]
                 all_frames.append(image)
+                calc_end = time.time()
+                elapsed = calc_end - calc_start
+                if elapsed < self.all_args.ifi:
+                    time.sleep(self.all_args.ifi - elapsed)
             else:
                 envs.render('human')
 
-            rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-            
-            episode_rewards = []
-            
-            for step in range(self.episode_length):
-                calc_start = time.time()
-
-                actions_env = np.zeros((1, 500, 2))
-                # Obser reward and next obs
-                obs, rewards, dones, infos = envs.step(actions_env)
-                episode_rewards.append(rewards)
-
-                if self.all_args.save_gifs:
-                    image = envs.render('rgb_array')[0][0]
-                    all_frames.append(image)
-                    calc_end = time.time()
-                    elapsed = calc_end - calc_start
-                    if elapsed < self.all_args.ifi:
-                        time.sleep(self.all_args.ifi - elapsed)
-                else:
-                    envs.render('human')
-
-            print("average episode rewards is: " + str(np.mean(np.sum(np.array(episode_rewards), axis=0))))
+        print("average episode rewards is: " + str(np.mean(np.sum(np.array(episode_rewards), axis=0))))
 
         if self.all_args.save_gifs:
             imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)

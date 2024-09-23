@@ -1,4 +1,5 @@
 from .intercept_probability import *
+from .scenarios.util import *
 
 '''
 手动实现多智能体的MPC控制
@@ -27,6 +28,7 @@ def system_dynamics(agent, dt, u):
 def cost_function(u, *args):
     a1 = 100.  # 截获概率的权重
     a2  = 10.  # 控制能量的权重
+    a3 = 5.  # 攻击角度的权重
 
     # u only contains the control of attackers
     target, attackers, dt = args[0], args[1], args[2]
@@ -54,7 +56,10 @@ def cost_function(u, *args):
         target_ = system_dynamics(target_, dt, target_u)
 
         # compute cost
-        sum_u = np.sum(u_i**2)
+        # energy cost
+        sum_u = np.sum(u_i**2)  # 控制能量
+
+        # detecting probability cost
         target_poly = target_.polygon_area
         # opt_detect = detection_optimization(target_, attackers_)
         opt_detect = []
@@ -63,7 +68,14 @@ def cost_function(u, *args):
             agent.detect_area = agent.get_detect_area()
             opt_detect.append(agent.detect_phi)
         probability = compute_area(opt_detect, target_poly, attackers_)
-        cost += a1 * probability/target_.area + a2 * sum_u
+        
+        # attacking cost
+        theta_cost = 0
+        for agent in attackers_:
+            theta_i = GetAcuteAngle(target_.state.p_pos-agent.state.p_pos, agent.state.p_vel)
+            theta_cost += theta_i**2
+
+        cost += a1 * probability/target_.area + a2 * sum_u + a3 * theta_cost
 
     del target_
     del attackers_
